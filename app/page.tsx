@@ -167,14 +167,26 @@ export default function QuestionsPage() {
           <h1 className="text-6xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             Tạo câu hỏi bằng AI
           </h1>
-          <p className="text-xl text-muted-foreground">Tạo và quản lý bộ câu hỏi của bạn một cách dễ dàng</p>
+
+          {/* Tên giảng viên */}
+          <p className="text-lg font-semibold text-gray-700">
+            Giảng viên hướng dẫn: <span className="text-primary">NGUYỄN THỊ THÙY MỴ</span>
+          </p>
+
+          <p className="text-xl text-muted-foreground">
+            Tạo và quản lý bộ câu hỏi của bạn một cách dễ dàng
+          </p>
+
           {questions.length > 0 && (
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full">
               <span className="text-2xl">📚</span>
-              <span className="text-lg font-semibold text-primary">{questions.length} câu hỏi đã tạo</span>
+              <span className="text-lg font-semibold text-primary">
+                {questions.length} câu hỏi đã tạo
+              </span>
             </div>
           )}
         </div>
+
 
         {/* Big centered button */}
         <Card className="p-12 shadow-2xl hover:shadow-3xl transition-shadow duration-300 border-2">
