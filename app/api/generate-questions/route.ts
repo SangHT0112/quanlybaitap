@@ -41,8 +41,26 @@ interface InsertedExercise extends Exercise {
   questions: InsertedQuestion[];
 }
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyBk7twdv6n450gZtjhbNN_ugriuqkut-UE";
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
+
+// Module-level round-robin index
+let keyIndex = 0;
+
+// Collect keys from env
+const geminiKeys: string[] = [];
+let i = 1;
+while (process.env[`GEMINI_API_KEY_${i}`]) {
+  geminiKeys.push(process.env[`GEMINI_API_KEY_${i}`]!);
+  i++;
+}
+if (geminiKeys.length === 0) {
+  // Fallback to single key if none numbered
+  if (process.env.GEMINI_API_KEY) {
+    geminiKeys.push(process.env.GEMINI_API_KEY);
+  } else {
+    geminiKeys.push("AIzaSyBk7twdv6n450gZtjhbNN_ugriuqkut-UE");
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -442,8 +460,14 @@ YÊU CẦU:
     const maxRetries = 2;
     let genText = "";
 
+    // Select current key for this request (round-robin)
+    const currentKeyIndex = keyIndex % geminiKeys.length;
+    const currentKey = geminiKeys[currentKeyIndex];
+    keyIndex++; // Increment for next request
+    console.log(`🔑 Using key index ${currentKeyIndex} for this request`);
+
     while (retryCount <= maxRetries) {
-      const generateRes = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      const generateRes = await fetch(`${GEMINI_API_URL}?key=${currentKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
