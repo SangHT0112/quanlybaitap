@@ -1,0 +1,16 @@
+tao project NextJS : npx create-next-app@latest baitap
+
+tai thu vien icon : npm install lucide-react
+
+Cai thu vien UI: npx shadcn@latest init
+cai Button: npx shadcn@latest add button texarea input dialog hover-card checkbox
+
+cai thu vien tao pdf : npm install @react-pdf/renderer
+thu vien tai file : npm install file-saver
+npm install --save-dev @types/file-saver
+
+
+mysql
+npm install dotenv
+
+npm install @react-oauth/google
