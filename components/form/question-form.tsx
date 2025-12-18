@@ -20,15 +20,6 @@ interface PreviewAnswer {
   correct?: boolean;
 }
 
-interface PreviewQuestion {
-  id?: number;
-  question_text: string;
-  emoji?: string;
-  answers?: PreviewAnswer[];
-  model_answer?: string;
-  explanation?: string;
-  type_name?: string;
-}
 
 // Available question types for selection
 const availableTypes = [
@@ -100,8 +91,6 @@ const [formData, setFormData] = useState<Required<QuestionFormData>>({
     return init;
   })()
 });
-
-
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")

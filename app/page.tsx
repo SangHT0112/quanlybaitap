@@ -6,67 +6,14 @@ import { Card } from "@/components/ui/card"
 import QuestionForm from "@/components/form/question-form"
 import type { Question, QuestionFormData } from "@/types/question"
 
-interface QuestionType {
-  id: number
-  type_name: string
-  icon?: string
-}
-
-interface Class {
-  id: number
-  name: string
-}
-
-interface Book {
-  id: number
-  name: string
-  class_id: number
-}
-
-interface RawQuestion {
-  id: number
-  question_text?: string
-  question?: string
-  emoji?: string
-  question_type?: string
-  type_name?: string
-  answers: RawAnswer[]
-  explanation?: string
-  correctAnswer?: number
-}
-
-interface RawAnswer {
-  id: number
-  answer_text?: string
-  text?: string
-  is_correct?: boolean
-}
-
-interface User {
-  id: number
-  [key: string]: unknown
-}
 
 export default function QuestionsPage() {
   const [questions, setQuestions] = useState<Question[]>([])
-  const [questionTypes, setQuestionTypes] = useState<QuestionType[]>([])
-  const [classes, setClasses] = useState<Class[]>([])
-  const [books, setBooks] = useState<Book[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
 
-  const userStr = typeof window !== "undefined" ? localStorage.getItem("user") : null
-  let user: User | null = null
-  if (userStr) {
-    try {
-      user = JSON.parse(userStr)
-    } catch (e: unknown) {
-      console.error("Invalid user data in localStorage:", e)
-    }
-  }
-  const userId = user?.id || 1
 
   const handleAddQuestion = async (data: QuestionFormData | Question | Question[]) => {
     try {
@@ -105,7 +52,6 @@ export default function QuestionsPage() {
             ) || [],
           explanation: formData.explanation || "",
           emoji: formData.emoji || "",
-          user_id: userId,
         }
         let newQuestion: Question
         if (editingQuestion) {
@@ -170,7 +116,7 @@ export default function QuestionsPage() {
 
           {/* Tên giảng viên */}
           <p className="text-lg font-semibold text-gray-700">
-            Giảng viên hướng dẫn: <span className="text-primary">NGUYỄN THỊ THÙY MỴ</span>
+            Giáo viên hướng dẫn: <span className="text-primary">NGUYỄN THỊ THÙY MỴ</span>
           </p>
 
           <p className="text-xl text-muted-foreground">
@@ -228,17 +174,13 @@ export default function QuestionsPage() {
                         answers: editingQuestion.answers,
                         explanation: editingQuestion.explanation,
                         emoji: editingQuestion.emoji,
-                        user_id: userId,
                       }
                     : {
-                        user_id: userId,
                         exercise_name: "",
                         lesson_name: "",
                         type: "multiple_choice",
                       }
                 }
-                classes={classes}
-                books={books}
               />
             </div>
           </Card>

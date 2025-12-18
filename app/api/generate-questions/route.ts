@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { OkPacket } from "mysql2/promise"; // Giữ để tương thích type, nhưng không dùng
+import { setTimeout } from 'timers/promises'; // Thêm: Để backoff nếu cần
 
 interface QuestionType {
   id: number;
@@ -43,7 +44,7 @@ interface InsertedExercise extends Exercise {
 
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
 
-// Module-level round-robin index
+// Module-level round-robin index (shared across requests)
 let keyIndex = 0;
 
 // Collect keys from env
@@ -58,7 +59,9 @@ if (geminiKeys.length === 0) {
   if (process.env.GEMINI_API_KEY) {
     geminiKeys.push(process.env.GEMINI_API_KEY);
   } else {
-    geminiKeys.push("AIzaSyBk7twdv6n450gZtjhbNN_ugriuqkut-UE");
+    // ⚠️ CRITICAL: Remove or update this hardcoded key as it has expired
+    // Replace with your own valid key or ensure env vars are set
+    throw new Error("No valid Gemini API key found. Please set GEMINI_API_KEY or GEMINI_API_KEY_1, etc., in environment variables.");
   }
 }
 
@@ -457,16 +460,17 @@ YÊU CẦU:
 
     let questions: GeneratedQuestion[] = [];
     let retryCount = 0;
-    const maxRetries = 2;
+    const maxRetries = 2; // Giữ nguyên, nhưng mỗi retry có thể dùng key mới nếu overload
     let genText = "";
 
-    // Select current key for this request (round-robin)
-    const currentKeyIndex = keyIndex % geminiKeys.length;
-    const currentKey = geminiKeys[currentKeyIndex];
-    keyIndex++; // Increment for next request
-    console.log(`🔑 Using key index ${currentKeyIndex} for this request`);
-
+    // Loop retry: Chọn key mới mỗi lần nếu overload (switch key ngay, không backoff)
     while (retryCount <= maxRetries) {
+      // Chọn key động trong loop (round-robin cho mỗi attempt)
+      const currentKeyIndex = keyIndex % geminiKeys.length;
+      const currentKey = geminiKeys[currentKeyIndex];
+      keyIndex++; // Increment ngay để thử key tiếp theo nếu fail
+      console.log(`🔑 Using key index ${currentKeyIndex} for attempt ${retryCount + 1}`);
+
       const generateRes = await fetch(`${GEMINI_API_URL}?key=${currentKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -481,7 +485,26 @@ YÊU CẦU:
 
       if (!generateRes.ok) {
         const errorData = await generateRes.json();
-        throw new Error(`Gemini API failed: ${errorData.error?.message || generateRes.statusText}`);
+        const errorMsg = errorData.error?.message || generateRes.statusText;
+        const status = generateRes.status;
+
+        // Detect overload (503 hoặc message chứa 'overloaded')
+        if (status === 503 || errorMsg.toLowerCase().includes('overloaded')) {
+          console.warn(`⚠️ Model overloaded (503) with key ${currentKeyIndex}. Switching to next key immediately (no backoff). Attempt ${retryCount + 1}/${maxRetries + 1}`);
+          retryCount++;
+          if (retryCount > maxRetries) {
+            throw new Error(`All keys failed due to overload: ${errorMsg}. Please try again later or add more keys.`);
+          }
+          continue; // Thử key mới ngay lập tức, không chờ
+        }
+
+        // Các lỗi khác (e.g., 429 quota, 401 key invalid): Backoff và retry với key mới
+        const backoffDelay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s...
+        console.warn(`⚠️ API error (${status}): ${errorMsg}. Retrying with next key in ${backoffDelay}ms... Attempt ${retryCount + 1}/${maxRetries + 1}`);
+        await setTimeout(backoffDelay);
+        retryCount++;
+        if (retryCount > maxRetries) throw new Error(`Gemini API failed after retries: ${errorMsg}`);
+        continue;
       }
 
       const genData = await generateRes.json();
