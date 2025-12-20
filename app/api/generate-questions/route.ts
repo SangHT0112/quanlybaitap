@@ -15,7 +15,7 @@ interface Exercise {
   name: string;
   lesson_name: string;
   type: 'multiple_choice' | 'open_ended' | 'mixed';
-  question_type_id?: number;  // Thêm: Loại chính cho toàn bộ exercise (nếu không mixed)
+  question_type_id?: number; // Thêm: Loại chính cho toàn bộ exercise (nếu không mixed)
   num_questions: number;
   num_answers?: number;
   difficulty: string;
@@ -29,13 +29,13 @@ interface GeneratedQuestion {
   explanation: string;
   model_answer?: string; // For open_ended
   answers?: string[]; // For multiple_choice/true_false/multiple_select, with "(correct)" on one or more
-  suggested_type?: string;  // Optional: Gợi ý loại từ AI (e.g., "multiple_choice", "true_false", "multiple_select", "open_ended")
+  suggested_type?: string; // Optional: Gợi ý loại từ AI (e.g., "multiple_choice", "true_false", "multiple_select", "open_ended")
 }
 
 interface InsertedQuestion extends GeneratedQuestion {
   id: number;
   order_num: number;
-  question_type_id: number;  // Thêm: Loại cho từng question
+  question_type_id: number; // Thêm: Loại cho từng question
 }
 
 interface InsertedExercise extends Exercise {
@@ -71,8 +71,8 @@ export async function POST(request: NextRequest) {
     const {
       exercise_name,
       type: exercise_type,
-      selected_types,  // Mới: Array string[] như ['multiple_choice', 'true_false']
-      type_quantities,  // MỚI: Record<string, number> như { multiple_choice: 5, true_false: 3 }
+      selected_types, // Mới: Array string[] như ['multiple_choice', 'true_false']
+      type_quantities, // MỚI: Record<string, number> như { multiple_choice: 5, true_false: 3 }
       lesson_name,
       num_questions,
       num_answers,
@@ -81,8 +81,8 @@ export async function POST(request: NextRequest) {
     } = formData as {
       exercise_name: string;
       type: 'multiple_choice' | 'open_ended' | 'mixed';
-      selected_types?: string[];  // Mới: Các loại được chọn
-      type_quantities?: Record<string, number>;  // MỚI: Số lượng cụ thể cho từng loại
+      selected_types?: string[]; // Mới: Các loại được chọn
+      type_quantities?: Record<string, number>; // MỚI: Số lượng cụ thể cho từng loại
       lesson_name: string;
       num_questions: number;
       num_answers?: number;
@@ -102,13 +102,13 @@ export async function POST(request: NextRequest) {
     // MỚI: Xử lý typesToUse và typeDistribution từ type_quantities nếu có (ưu tiên), fallback về selected_types even distribution
     let typesToUse: string[];
     let typeDistribution: { type: string; count: number }[];
-    
+   
     if (type_quantities) {
       // Lấy keys có count > 0 làm typesToUse, và distribution từ type_quantities
       const validEntries = Object.entries(type_quantities).filter(([_, count]) => count > 0);
       typesToUse = validEntries.map(([type]) => type);
       typeDistribution = validEntries.map(([type, count]) => ({ type, count }));
-      
+     
       // Validate tổng sum == num_questions
       const totalFromQuantities = typeDistribution.reduce((sum, { count }) => sum + count, 0);
       if (totalFromQuantities !== num_questions) {
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
     } else {
       // FIX cho mixed: Fallback đến ID của 'multiple_choice' (luôn tồn tại)
       const defaultMultiType = existingTypes.find(t => t.type_name.toLowerCase() === 'multiple choice');
-      questionTypeId = defaultMultiType?.id || existingTypes[0]?.id || 1;  // Đảm bảo >0
+      questionTypeId = defaultMultiType?.id || existingTypes[0]?.id || 1; // Đảm bảo >0
       console.log("🔄 Mixed fallback questionTypeId:", questionTypeId);
     }
 
@@ -176,60 +176,43 @@ export async function POST(request: NextRequest) {
       created_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
     };
 
-    // Generate questions (giữ nguyên toàn bộ phần này, không thay đổi)
+    // Generate questions (cập nhật prompt và tokens)
     const levelDescription = 'học sinh cấp 3, ngôn ngữ học thuật phù hợp trình độ THPT';
     const subjectHint = lesson_name.toLowerCase().includes('toán') ? 'Toán học' : lesson_name.toLowerCase().includes('tiếng việt') ? 'Tiếng Việt' : 'Kiến thức chung';
     const typeList = existingTypes.map(t => `${t.id}: ${t.type_name}`).join('; ');
-    const typesStr = typesToUse.join(', ');  // e.g., "multiple_choice, true_false"
+    const typesStr = typesToUse.join(', '); // e.g., "multiple_choice, true_false"
 
-    // MỚI: Chỉnh prompt để yêu cầu thứ tự rõ ràng theo distribution (với cumulative ranges)
-    const orderedTypePrompt = isMixed 
-      ? (() => {
-          let cumulativeStart = 1;
-          return `theo đúng thứ tự và số lượng: ${distributionStr}. Đặt suggested_type tương ứng cho từng nhóm câu hỏi (ví dụ: câu ${cumulativeStart}-${cumulativeStart + typeDistribution[0].count - 1}: "${typeDistribution[0].type}", ` + 
-                 typeDistribution.slice(1).map(({ type, count }) => {
-                   const end = cumulativeStart + count - 1;
-                   const range = `${cumulativeStart}-${end}`;
-                   cumulativeStart = end + 1;
-                   return `câu ${range}: "${type}",`;
-                 }).join(' ') + `).`;
-        })() 
-      : '';
-
+    // FIX: Rút gọn prompt, bỏ orderedTypePrompt tạm để tránh dài, thêm yêu cầu compact
     const generatePrompt = `
-Trả lời DUY NHẤT bằng một mảng JSON hợp lệ với đúng ${num_questions} objects, KHÔNG thêm bất kỳ text nào khác (không markdown, không giải thích). Nếu không đủ, lặp lại để đủ.
-
+Trả lời DUY NHẤT bằng một mảng JSON hợp lệ với đúng ${num_questions} objects, KHÔNG thêm bất kỳ text nào khác (không markdown, không giải thích). Nếu không đủ, lặp lại để đủ. Giữ JSON compact, không xuống dòng, explanation <30 chữ, answers <5 chữ mỗi cái.
 Mỗi object: ${isMultipleOnly ? '{ "question_text": "...", "emoji": "...", "answers": ["...", "... (correct)", ...], "explanation": "...", "suggested_type": "multiple_choice" }' : isMixed ? '{ "question_text": "...", "emoji": "...", "answers"?: ["...", "... (correct)", ...], "model_answer"?: "...", "explanation": "...", "suggested_type": "multiple_choice|true_false|multiple_select|open_ended" }' : '{ "question_text": "...", "emoji": "...", "model_answer": "...", "explanation": "...", "suggested_type": "open_ended" }'}
-
-Tạo ${num_questions} câu hỏi ${isMixed ? `mix các loại từ ${typesStr} ${orderedTypePrompt}` : isMultipleOnly ? 'trắc nghiệm nhiều lựa chọn' : 'tự luận'} NGẮN GỌN cho ${levelDescription} về ${subjectHint} "${lesson_name}". 
+Tạo ${num_questions} câu hỏi ${isMixed ? `mix các loại từ ${typesStr} (phân bổ theo ${distributionStr})` : isMultipleOnly ? 'trắc nghiệm nhiều lựa chọn' : 'tự luận'} NGẮN GỌN cho ${levelDescription} về ${subjectHint} "${lesson_name}".
 YÊU CẦU:
 - Ngôn ngữ học thuật, rõ ràng, phù hợp với trình độ học sinh THPT.
 - Mỗi câu hỏi chỉ 1-2 câu ngắn (dưới 50 chữ).
 - Có emoji phù hợp (ví dụ: 📊, 🔬, 📖...).
 - Độ khó: ${difficulty} (${difficulty === 'Easy' ? 'dễ' : difficulty === 'Medium' ? 'trung bình' : 'khó'}).
-- ${isMixed ? 
-  `- Phân bổ ĐÚNG theo thứ tự và số lượng đã chỉ định ở trên. 
-    - multiple_choice: ${num_answers} đáp án ngắn (1-10 chữ), đúng 1 "(correct)".
-    - true_false: Đúng 2 đáp án (True/False), 1 "(correct)", suggest "true_false".
+- ${isMixed ?
+  `- Phân bổ ĐÚNG theo số lượng: ${distributionStr}.
+    - multiple_choice: ${num_answers} đáp án ngắn, đúng 1 "(correct)".
+    - true_false: Đúng 2 đáp án ("Đúng", "Sai"), 1 "(correct)", suggest "true_false".
     - multiple_select: Nhiều đáp án, mark NHỮNG "(correct)" (>1), suggest "multiple_select".
-    - open_ended: Không answers, có "model_answer" ngắn, suggest "open_ended".` : 
-  isMultipleOnly ? 
-  `- Có khoảng ${num_answers} đáp án ngắn gọn (1-10 chữ). 
-    - Nếu đúng/sai đơn giản: suggest "true_false" với đúng 2 đáp án (True/False), 1 "(correct)".
+    - open_ended: Không answers, có "model_answer" ngắn, suggest "open_ended".` :
+  isMultipleOnly ?
+  `- Có khoảng ${num_answers} đáp án ngắn gọn (1-10 chữ).
+    - Nếu đúng/sai đơn giản: suggest "true_false" với đúng 2 đáp án ("Đúng", "Sai"), 1 "(correct)".
     - Nếu có nhiều đáp án đúng: suggest "multiple_select" và mark NHỮNG "(correct)" trên các đáp án đúng (có thể >1).
-    - Còn lại: "multiple_choice" với đúng 1 "(correct)".` : 
+    - Còn lại: "multiple_choice" với đúng 1 "(correct)".` :
   `- Câu hỏi mở, khuyến khích phân tích sâu. Có "model_answer" ngắn gọn làm đáp án mẫu.`}
-- Thêm "explanation" giải thích chi tiết, học thuật (dưới 50 chữ).
+- Thêm "explanation" giải thích chi tiết, học thuật (dưới 30 chữ).
 - Luôn thêm "suggested_type" phù hợp từ danh sách: ${typeList} (chỉ dùng các loại trong ${typesStr} nếu mixed).
 `;
 
     // MỚI: Hàm sort questions theo thứ tự typesToUse dựa trên suggested_type
     function sortQuestionsByTypeOrder(questions: GeneratedQuestion[]): GeneratedQuestion[] {
-      if (!isMixed) return questions;  // Không cần sort nếu không mixed
-
+      if (!isMixed) return questions; // Không cần sort nếu không mixed
       // Tạo map từ type string đến index trong typeDistribution (thứ tự ưu tiên)
       const typeOrderMap = new Map(typeDistribution.map(({ type }, index) => [type, index]));
-
       // Sort stable theo index của suggested_type (nếu không match, đẩy về cuối)
       return questions.sort((a, b) => {
         const aOrder = typeOrderMap.get(a.suggested_type || '') ?? typeDistribution.length;
@@ -241,43 +224,38 @@ YÊU CẦU:
     // MỚI: Hàm enforce distribution count (assign suggested_type theo distribution nếu AI không tuân thủ)
     function enforceTypeDistribution(questions: GeneratedQuestion[]): GeneratedQuestion[] {
       if (!isMixed) return questions;
-
       // Đếm current count theo suggested_type
       const currentCounts = new Map<string, number>();
       typesToUse.forEach(type => currentCounts.set(type, 0));
-      questions.forEach(q => {
+      questions.forEach((q: GeneratedQuestion) => {
         if (q.suggested_type && typesToUse.includes(q.suggested_type)) {
           currentCounts.set(q.suggested_type, (currentCounts.get(q.suggested_type) || 0) + 1);
         }
       });
-
       console.log("📈 Current counts before enforce:", Object.fromEntries(currentCounts));
-
       // Tìm questions cần reassign (những cái không có suggested_type hoặc excess)
       const questionsToAssign: GeneratedQuestion[] = [];
-      questions.forEach(q => {
+      questions.forEach((q: GeneratedQuestion) => {
         if (!q.suggested_type || !typesToUse.includes(q.suggested_type)) {
           questionsToAssign.push(q);
         }
       });
-
       // Đối với excess: Tìm types có count > required, di chuyển excess sang types thiếu
       typeDistribution.forEach(({ type, count: required }) => {
         const current = currentCounts.get(type) || 0;
         if (current > required) {
           const excess = current - required;
           // Tìm questions có suggested_type này để reassign (ưu tiên những cái cuối trong sort)
-          const typeQuestions = questions.filter(q => q.suggested_type === type);
+          const typeQuestions = questions.filter((q: GeneratedQuestion) => q.suggested_type === type);
           for (let i = 0; i < excess && i < typeQuestions.length; i++) {
             questionsToAssign.push(typeQuestions[typeQuestions.length - 1 - i]);
           }
           currentCounts.set(type, required);
         }
       });
-
       // Assign cho questionsToAssign theo thứ tự distribution (lặp lại nếu cần)
       let distIndex = 0;
-      questionsToAssign.forEach(q => {
+      questionsToAssign.forEach((q: GeneratedQuestion) => {
         const targetType = typeDistribution[distIndex % typeDistribution.length].type;
         const required = typeDistribution[distIndex % typeDistribution.length].count;
         const current = currentCounts.get(targetType) || 0;
@@ -287,18 +265,21 @@ YÊU CẦU:
         }
         distIndex++;
       });
-
       console.log("📈 Final counts after enforce:", Object.fromEntries(currentCounts));
-
       return questions;
     }
 
-    // Robust JSON extraction & repair function (cập nhật để pad theo thứ tự nếu mixed)
+    // FIX: Robust JSON extraction & repair function (thêm check real questions để trigger retry nếu quá nhiều dummy)
     function extractAndRepairJson(text: string): GeneratedQuestion[] {
+      // Detect truncate: Nếu không kết thúc bằng ], append ]
+      if (!text.trim().endsWith(']')) {
+        text = text.trim() + ']';
+        console.log('🔧 Appended ] to fix truncate');
+      }
+
       // Extract JSON array
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       if (!jsonMatch) throw new Error("Không tìm thấy mảng JSON");
-
       let jsonStr = jsonMatch[0];
 
       // Cut to last complete ]
@@ -309,19 +290,17 @@ YÊU CẦU:
       try {
         let questions = JSON.parse(jsonStr);
         if (!Array.isArray(questions)) throw new Error("Not array");
-
         // MỚI: Enforce distribution ngay sau parse
         questions = enforceTypeDistribution(questions);
-
         // MỚI: Sort theo thứ tự type
         questions = sortQuestionsByTypeOrder(questions);
-
         // Pad if short (theo thứ tự typesToUse nếu mixed, ưu tiên theo distribution)
-        let padIndex = 0;  // Index theo distribution
+        let padIndex = 0; // Index theo distribution
         while (questions.length < num_questions) {
           const targetType = typeDistribution[padIndex % typeDistribution.length].type;
-          const dummyAnswers = targetType === 'true_false' ? ['True', 'False (correct)'] : 
-                               targetType === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] : 
+          // SỬA: Dùng "Đúng" và "Sai" thay vì "True" và "False"
+          const dummyAnswers = targetType === 'true_false' ? ['Đúng', 'Sai (correct)'] :
+                               targetType === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] :
                                targetType === 'multiple_choice' ? Array(num_answers || 4).fill("Mẫu").map((_, i) => i === 0 ? "Mẫu (correct)" : "Mẫu") :
                                undefined;
           questions.push({
@@ -339,32 +318,35 @@ YÊU CẦU:
           questions = sortQuestionsByTypeOrder(questions);
         }
 
-        return questions.slice(0, num_questions);  // Trim if extra
+        // FIX: Check real questions (không phải dummy/mẫu)
+        const realQuestions = questions.filter((q: GeneratedQuestion) => !q.question_text.includes('mẫu') && !q.question_text.includes('tự động fix') && q.question_text.trim().length > 10);
+        if (realQuestions.length < num_questions * 0.5) {
+          throw new Error("Quá nhiều dummy (output có thể bị truncate), cần retry");
+        }
+
+        return questions.slice(0, num_questions); // Trim if extra
       } catch (parseErr) {
         console.error("⚠️ Raw parse failed, applying minimal repairs:", parseErr);
         // Minimal repairs: only trailing commas and unquoted keys (skip single quote fix to avoid breaking inner ')
         let repairedStr = jsonStr
-          .replace(/(\r\n|\n|\r)/g, " ")  // Normalize whitespace
-          .replace(/,\s*([}\]])/g, "$1")  // Remove trailing commas
-          .replace(/:\s*([A-Za-z0-9_]+)\s*(?=[,}])/g, ':"$1"');  // Quote unquoted keys
-
+          .replace(/(\r\n|\n|\r)/g, " ") // Normalize whitespace
+          .replace(/,\s*([}\]])/g, "$1") // Remove trailing commas
+          .replace(/:\s*([A-Za-z0-9_]+)\s*(?=[,}])/g, ':"$1"'); // Quote unquoted keys
         // Try parse repaired
         try {
           let questions = JSON.parse(repairedStr);
           if (!Array.isArray(questions)) throw new Error("Not array after repair");
-
           // MỚI: Enforce distribution
           questions = enforceTypeDistribution(questions);
-
           // MỚI: Sort theo thứ tự type
           questions = sortQuestionsByTypeOrder(questions);
-
           // Pad if short (tương tự trên, với thứ tự)
           let padIndex = 0;
           while (questions.length < num_questions) {
             const targetType = typeDistribution[padIndex % typeDistribution.length].type;
-            const dummyAnswers = targetType === 'true_false' ? ['True', 'False (correct)'] : 
-                                 targetType === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] : 
+            // SỬA: Dùng "Đúng" và "Sai" thay vì "True" và "False"
+            const dummyAnswers = targetType === 'true_false' ? ['Đúng', 'Sai (correct)'] :
+                                 targetType === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] :
                                  targetType === 'multiple_choice' ? Array(num_answers || 4).fill("Mẫu").map((_, i) => i === 0 ? "Mẫu (correct)" : "Mẫu") :
                                  undefined;
             questions.push({
@@ -381,6 +363,12 @@ YÊU CẦU:
             questions = sortQuestionsByTypeOrder(questions);
           }
 
+          // FIX: Check real questions
+          const realQuestions = questions.filter((q: GeneratedQuestion) => !q.question_text.includes('mẫu') && !q.question_text.includes('tự động fix') && q.question_text.trim().length > 10);
+          if (realQuestions.length < num_questions * 0.5) {
+            throw new Error("Quá nhiều dummy sau repair, cần retry");
+          }
+
           return questions.slice(0, num_questions);
         } catch (repairErr) {
           console.error("⚠️ Repair failed, attempting manual fix:", repairErr);
@@ -389,22 +377,23 @@ YÊU CẦU:
           const fixedQuestions: GeneratedQuestion[] = [];
           objMatches.slice(0, num_questions).forEach((objStr, i) => {
             try {
-              const q = JSON.parse(objStr.replace(/,\s*([}\]])/g, "$1"));
+              const q: Partial<GeneratedQuestion> = JSON.parse(objStr.replace(/,\s*([}\]])/g, "$1"));
               // Ensure required fields
               q.question_text = q.question_text || `Câu hỏi ${i + 1}`;
               q.emoji = q.emoji || "❓";
               q.explanation = q.explanation || "Giải thích mẫu.";
               q.suggested_type = q.suggested_type || typesToUse[0];
               const st = q.suggested_type;
+              // SỬA: Dùng "Đúng" và "Sai" thay vì "True" và "False"
               if (st !== 'open_ended') {
-                const dummyAnswers = st === 'true_false' ? ['True', 'False (correct)'] : 
-                                     st === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] : 
+                const dummyAnswers = st === 'true_false' ? ['Đúng', 'Sai (correct)'] :
+                                     st === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] :
                                      Array(num_answers || 4).fill("Mẫu").map((_, j) => j === 0 ? "Mẫu (correct)" : "Mẫu");
                 q.answers = q.answers || dummyAnswers;
               } else {
                 q.model_answer = q.model_answer || "Đáp án mẫu.";
               }
-              fixedQuestions.push(q);
+              fixedQuestions.push(q as GeneratedQuestion);
             } catch {
               // Fallback dummy (theo thứ tự nếu mixed)
               let dummyType: string;
@@ -414,8 +403,9 @@ YÊU CẦU:
               } else {
                 dummyType = typesToUse[0];
               }
-              const dummyAnswers = dummyType === 'true_false' ? ['True', 'False (correct)'] : 
-                                   dummyType === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] : 
+              // SỬA: Dùng "Đúng" và "Sai" thay vì "True" và "False"
+              const dummyAnswers = dummyType === 'true_false' ? ['Đúng', 'Sai (correct)'] :
+                                   dummyType === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] :
                                    dummyType === 'multiple_choice' ? Array(num_answers || 4).fill("Mẫu").map((_, j) => j === 0 ? "Mẫu (correct)" : "Mẫu") :
                                    undefined;
               fixedQuestions.push({
@@ -436,8 +426,9 @@ YÊU CẦU:
           let padIndex = 0;
           while (sortedFixed.length < num_questions) {
             const targetType = typeDistribution[padIndex % typeDistribution.length].type;
-            const dummyAnswers = targetType === 'true_false' ? ['True', 'False (correct)'] : 
-                                 targetType === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] : 
+            // SỬA: Dùng "Đúng" và "Sai" thay vì "True" và "False"
+            const dummyAnswers = targetType === 'true_false' ? ['Đúng', 'Sai (correct)'] :
+                                 targetType === 'multiple_select' ? ['A', 'B (correct)', 'C (correct)'] :
                                  targetType === 'multiple_choice' ? Array(num_answers || 4).fill("Mẫu").map((_, i) => i === 0 ? "Mẫu (correct)" : "Mẫu") :
                                  undefined;
             sortedFixed.push({
@@ -453,6 +444,13 @@ YÊU CẦU:
             sortedFixed = enforceTypeDistribution(sortedFixed);
             sortedFixed = sortQuestionsByTypeOrder(sortedFixed);
           }
+
+          // FIX: Check real questions
+          const realQuestions = sortedFixed.filter((q: GeneratedQuestion) => !q.question_text.includes('mẫu') && !q.question_text.includes('tự động fix') && q.question_text.trim().length > 10);
+          if (realQuestions.length < num_questions * 0.5) {
+            throw new Error("Quá nhiều dummy sau manual fix, cần retry");
+          }
+
           return sortedFixed;
         }
       }
@@ -460,7 +458,7 @@ YÊU CẦU:
 
     let questions: GeneratedQuestion[] = [];
     let retryCount = 0;
-    const maxRetries = 2; // Giữ nguyên, nhưng mỗi retry có thể dùng key mới nếu overload
+    const maxRetries = 3; // Tăng lên 3 để retry nhiều hơn
     let genText = "";
 
     // Loop retry: Chọn key mới mỗi lần nếu overload (switch key ngay, không backoff)
@@ -478,7 +476,7 @@ YÊU CẦU:
           contents: [{ parts: [{ text: generatePrompt }] }],
           generationConfig: {
             temperature: difficulty === 'Hard' ? 0.8 : difficulty === 'Easy' ? 0.4 : 0.6,
-            maxOutputTokens: 4000,  // Tăng để tránh truncate
+            maxOutputTokens: 8000, // FIX: Tăng lên 8000 để tránh truncate
           },
         }),
       });
@@ -487,7 +485,6 @@ YÊU CẦU:
         const errorData = await generateRes.json();
         const errorMsg = errorData.error?.message || generateRes.statusText;
         const status = generateRes.status;
-
         // Detect overload (503 hoặc message chứa 'overloaded')
         if (status === 503 || errorMsg.toLowerCase().includes('overloaded')) {
           console.warn(`⚠️ Model overloaded (503) with key ${currentKeyIndex}. Switching to next key immediately (no backoff). Attempt ${retryCount + 1}/${maxRetries + 1}`);
@@ -497,7 +494,6 @@ YÊU CẦU:
           }
           continue; // Thử key mới ngay lập tức, không chờ
         }
-
         // Các lỗi khác (e.g., 429 quota, 401 key invalid): Backoff và retry với key mới
         const backoffDelay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s...
         console.warn(`⚠️ API error (${status}): ${errorMsg}. Retrying with next key in ${backoffDelay}ms... Attempt ${retryCount + 1}/${maxRetries + 1}`);
@@ -513,7 +509,7 @@ YÊU CẦU:
 
       try {
         questions = extractAndRepairJson(genText);
-        if (questions.length >= num_questions) break;  // Good enough
+        if (questions.length >= num_questions) break; // Good enough
         throw new Error("Not enough questions");
       } catch (e) {
         retryCount++;
@@ -533,7 +529,7 @@ YÊU CẦU:
     // Log final distribution để debug
     const finalCounts = new Map<string, number>();
     typesToUse.forEach(type => finalCounts.set(type, 0));
-    questions.forEach(q => {
+    questions.forEach((q: GeneratedQuestion) => {
       if (q.suggested_type && typesToUse.includes(q.suggested_type)) {
         finalCounts.set(q.suggested_type, (finalCounts.get(q.suggested_type) || 0) + 1);
       }
@@ -542,22 +538,20 @@ YÊU CẦU:
 
     // Save questions to DB -> BỎ, chỉ tạo insertedQuestions với fake IDs
     const insertedQuestions: InsertedQuestion[] = [];
-
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
-
       // Determine question_type_id: Use suggested or fallback to typesToUse
       // Tìm multiple_choice type làm default
-      const defaultTypeId = existingTypes.find(t => t.type_name.toLowerCase() === 'multiple choice')?.id || 
-                          existingTypes[0]?.id || 
+      const defaultTypeId = existingTypes.find(t => t.type_name.toLowerCase() === 'multiple choice')?.id ||
+                          existingTypes[0]?.id ||
                           1;
-      
+     
       let qTypeId: number;
-    
+   
       // Ưu tiên suggested_type
       if (q.suggested_type) {
           const suggestedType = q.suggested_type ?? '';
-          const suggestedMatch = existingTypes.find(t => 
+          const suggestedMatch = existingTypes.find(t =>
             t.type_name.toLowerCase() === suggestedType.toLowerCase().replace('_', ' ') ||
             t.type_name.toLowerCase() === suggestedType.toLowerCase()
           );
@@ -581,16 +575,14 @@ YÊU CẦU:
 
       // Fake qid
       const qid = exercise_id + (i + 1); // Simple fake ID
-      let correctAnswerIds: number[] = [];  // Để hỗ trợ multiple correct
-
+      let correctAnswerIds: number[] = []; // Để hỗ trợ multiple correct
       // Handle answers nếu là multiple_choice type (hỗ trợ true_false/multiple_select với nhiều correct) - chỉ tạo array, không insert DB
       const qType = existingTypes.find(t => t.id === qTypeId);
       if (qType?.is_multiple_choice && q.answers && q.answers.length > 0) {
-        // Tạo fake answer IDs và map
+        // SỬA: Xử lý câu trả lời "Đúng" và "Sai" thay vì "True" và "False"
         for (let j = 0; j < q.answers.length; j++) {
           const answerText = q.answers[j].replace(/\(correct\)/gi, "").trim();
-          const isCorrect = q.answers[j].includes("(correct)");  // Kiểm tra từng cái, hỗ trợ nhiều
-
+          const isCorrect = q.answers[j].includes("(correct)"); // Kiểm tra từng cái, hỗ trợ nhiều
           const fakeAid = qid * 100 + (j + 1); // Fake ID
           if (isCorrect) {
             correctAnswerIds.push(fakeAid);
@@ -613,7 +605,6 @@ YÊU CẦU:
     }
 
     // Bỏ commit/rollback
-
     const response: InsertedExercise = {
       ...insertedExercise,
       questions: insertedQuestions,
