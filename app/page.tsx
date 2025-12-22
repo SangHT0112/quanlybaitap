@@ -14,7 +14,6 @@ export default function QuestionsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
 
-
   const handleAddQuestion = async (data: QuestionFormData | Question | Question[]) => {
     try {
       if (Array.isArray(data)) {
@@ -116,8 +115,12 @@ export default function QuestionsPage() {
 
           {/* Tên giảng viên */}
           <p className="text-lg font-semibold text-gray-700">
-            Giáo viên hướng dẫn: <span className="text-primary">NGUYỄN THỊ THÙY MỴ</span>
-          </p>
+              Giáo viên hướng dẫn: <span className="text-primary">NGUYỄN THỊ THÙY MỴ</span>
+            </p>
+            <p className="text-lg font-semibold text-gray-700">
+              Học sinh: <span className="text-primary">Võ Thị Mỹ Tiên</span>
+            </p>
+
 
           <p className="text-xl text-muted-foreground">
             Tạo và quản lý bộ câu hỏi của bạn một cách dễ dàng
