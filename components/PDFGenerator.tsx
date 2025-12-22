@@ -3,265 +3,178 @@
 
 import { Document, Page, Text, View, StyleSheet, pdf, Font } from "@react-pdf/renderer"
 import { saveAs } from "file-saver"
-import type { InsertedQuestion, Answer } from "@/types/question"
+import type { InsertedQuestion } from "@/types/question"
 
-// --- Đăng ký font Roboto (dạng .ttf hỗ trợ bởi @react-pdf/renderer) ---
+// Đăng ký font Roboto
 Font.register({
   family: "Roboto",
   fonts: [
-    {
-      src: "/fonts/Roboto-Regular.ttf",
-      fontWeight: "normal",
-      fontStyle: "normal",
-    },
-    {
-      src: "/fonts/Roboto-Bold.ttf",
-      fontWeight: "bold",
-      fontStyle: "normal",
-    },
-    {
-      src: "/fonts/Roboto-Italic.ttf",
-      fontWeight: "normal",
-      fontStyle: "italic",
-    },
+    { src: "/fonts/Roboto-Regular.ttf", fontWeight: "normal" },
+    { src: "/fonts/Roboto-Bold.ttf", fontWeight: "bold" },
+    { src: "/fonts/Roboto-Italic.ttf", fontWeight: "normal", fontStyle: "italic" },
   ],
 })
 
-// --- Hỗ trợ emoji qua hình ảnh (Twemoji từ CDN - cần internet khi render) ---
+// Hỗ trợ emoji
 Font.registerEmojiSource({
-  format: 'png',
-  url: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/',
+  format: "png",
+  url: "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/",
 })
 
-// --- Style ---
+// Styles
 const styles = StyleSheet.create({
-  page: {
-    flexDirection: "column",
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-    fontFamily: "Roboto",
-  },
-  section: { margin: 10, padding: 10 },
-  title: { 
-    fontSize: 18, 
-    marginBottom: 10, 
-    fontWeight: "bold",
-    textAlign: "center"
-  },
-  lessonInfo: {
-    fontSize: 14,
-    marginBottom: 15,
-    textAlign: "center",
-    color: "#666",
-    fontStyle: "italic"
-  },
-  question: { 
-    fontSize: 14, 
-    marginBottom: 5,
-    marginTop: 15
-  },
-  answer: { 
-    fontSize: 12, 
-    marginLeft: 10, 
-    marginBottom: 2 
-  },
-  correct: { 
-    color: "green", 
-    fontWeight: "bold" 
-  },
-  explanation: { 
-    fontSize: 11, 
-    marginTop: 5, 
-    fontStyle: "italic", 
-    color: "#666" 
-  },
+  page: { padding: 30, fontFamily: "Roboto", backgroundColor: "#fff" },
+  title: { fontSize: 20, marginBottom: 12, fontWeight: "bold", textAlign: "center" },
+  lessonInfo: { fontSize: 14, marginBottom: 20, textAlign: "center", color: "#555", fontStyle: "italic" },
+  questionBlock: { marginBottom: 32 },
+  question: { fontSize: 14, marginBottom: 12, lineHeight: 1.5 },
+  answers: { marginLeft: 20 },
+  answer: { fontSize: 13, marginBottom: 6 },
+  correctAnswer: { color: "#16a34a", fontWeight: "bold" }, // Chỉ dùng khi showAnswers = true
+  explanation: { fontSize: 12, marginTop: 14, marginLeft: 20, fontStyle: "italic", color: "#444" },
+  blankSpace: { marginTop: 12, marginBottom: 30, minHeight: 100 },
 })
 
-// --- Chuẩn hóa đáp án ---
-const processAnswers = (answers: any[]): Answer[] => {
-  if (!Array.isArray(answers)) return []
-  console.log("Processing answers:", answers)
-  return answers.map((ans, i) => {
+interface GeneratePDFOptions {
+  filename?: string
+  exerciseName?: string
+  lessonName?: string
+  className?: string
+  bookName?: string
+  showAnswers?: boolean
+  showExplanation?: boolean
+}
+
+// Xử lý answers từ backend
+const processAnswers = (answers: any[] = []) => {
+  return answers.map((ans: any, i: number) => {
     if (typeof ans === "string") {
-      const isCorrect = ans.includes("(correct)")
-      return { 
-        id: i + 1, 
-        answer_text: ans.replace(" (correct)", "").trim(), 
-        is_correct: isCorrect 
-      }
+      const isCorrect = ans.toLowerCase().includes("(correct)")
+      const text = ans.replace(/\(correct\)/gi, "").trim()
+      return { text, isCorrect }
     }
-    if (typeof ans === "object") {
-      return { 
-        id: ans.id || i + 1, 
-        answer_text: ans.answer_text || ans.text || String(ans), 
-        is_correct: ans.is_correct ?? false 
-      }
-    }
-    return { 
-      id: i + 1, 
-      answer_text: String(ans), 
-      is_correct: false 
+    return {
+      text: ans.answer_text || ans.text || String(ans),
+      isCorrect: !!ans.is_correct || !!ans.correct,
     }
   })
 }
 
-// --- Props cho PDF Document ---
-interface MyDocumentProps {
-  questions: InsertedQuestion[];
-  exerciseName?: string;
-  lessonName?: string;
-  className?: string;
-  bookName?: string;
-}
-
-// --- Component PDF ---
-const MyDocument = ({ 
-  questions, 
-  exerciseName = "Bài Tập", 
+const MyDocument = ({
+  questions,
+  exerciseName = "Bài Tập",
   lessonName = "",
-  className = "",
-  bookName = ""
-}: MyDocumentProps) => (
+  showAnswers = true,
+  showExplanation = true,
+}: {
+  questions: InsertedQuestion[]
+  exerciseName?: string
+  lessonName?: string
+  showAnswers?: boolean
+  showExplanation?: boolean
+}) => (
   <Document>
     <Page size="A4" style={styles.page}>
-      <View style={styles.section}>
-        {/* Tiêu đề chính */}
+      <View>
         <Text style={styles.title}>{exerciseName}</Text>
-        
-        {/* Thông tin bài học - tương tự như trong form */}
         {lessonName && (
           <Text style={styles.lessonInfo}>
-            Bài học: 📖 {lessonName}  {/* Emoji sẽ tự render nếu có hỗ trợ */}
+            Bài học: 📖 {lessonName}
           </Text>
         )}
-
-        {(className || bookName) && (
-          <Text style={styles.lessonInfo}>
-            {className && `Lớp: ${className}`}
-            {className && bookName && " • "}
-            {bookName && `Sách: ${bookName}`}
-          </Text>
-        )}
-
-        {/* Danh sách câu hỏi */}
-        {questions
-          .filter((q) => q) // loại bỏ null/undefined
-          .map((q, index) => {
-            return (
-              <View key={q?.id || index} style={{ marginBottom: 20 }}>
-                <Text style={styles.question}>
-                  Câu {index + 1}: {q?.question_text || "Không có nội dung"}
-                </Text>
-               {(() => {
-                const type = q.type_name || q.question_type || "multiple_choice"
-                const processedAnswers = processAnswers(q.answers || [])
-
-                // --- Câu hỏi True/False ---
-                if (type === "true_false") {
-                  return (
-                    <View>
-                      {["Đúng", "Sai"].map((opt, i) => (
-                        <Text
-                          key={i}
-                          style={
-                            processedAnswers[i]?.is_correct
-                              ? [styles.answer, styles.correct]
-                              : styles.answer
-                          }
-                        >
-                          {String.fromCharCode(65 + i)}. {opt}
-                        </Text>
-                      ))}
-                    </View>
-                  )
-                }
-
-                // --- Câu hỏi nhiều đáp án đúng ---
-                if (type === "multiple_select") {
-                  return (
-                    <View>
-                      {processedAnswers.map((ans, i) => (
-                        <Text key={ans?.id || i} style={styles.answer}>
-                          {String.fromCharCode(65 + i)}.{" "}
-                          {ans.is_correct && <Text style={styles.correct}>✓ </Text>}
-                          {ans.answer_text}
-                        </Text>
-                      ))}
-                    </View>
-                  )
-                }
-
-
-                // --- Câu hỏi trắc nghiệm 1 đáp án đúng (default) ---
-                if (type === "multiple_choice") {
-                  return (
-                    <View>
-                      {processedAnswers.map((ans, i) => (
-                        <Text
-                          key={ans?.id || i}
-                          style={ans.is_correct ? [styles.answer, styles.correct] : styles.answer}
-                        >
-                          {String.fromCharCode(65 + i)}. {ans.answer_text}
-                        </Text>
-                      ))}
-                    </View>
-                  )
-                }
-
-               
-
-                // --- Các loại khác (tự luận, fill_blank, v.v.) ---
-                return (
-                  <Text style={styles.answer}>
-                    ⬜ {q.model_answer || "Không có đáp án mẫu"}
-                  </Text>
-                )
-              })()}
-
-               
-              </View>
-            )
-          })}
-
       </View>
+
+      {questions
+        .filter((q): q is InsertedQuestion => !!q && !!q.question_text)
+        .map((q, index) => {
+          const processedAnswers = processAnswers(q.answers)
+          const isOpenEnded = !q.answers || q.answers.length === 0 || q.question_type_id === 4
+
+          return (
+            <View key={q.id || index} style={styles.questionBlock}>
+              {/* Câu hỏi */}
+              <Text style={styles.question}>
+                <Text style={{ fontWeight: "bold" }}>Câu {index + 1}:</Text> {q.emoji || ""} {q.question_text}
+              </Text>
+
+              {/* TRẮC NGHIỆM */}
+              {!isOpenEnded && processedAnswers.length > 0 && (
+                <View style={styles.answers}>
+                  {processedAnswers.map((ans, i) => (
+                    <Text
+                      key={i}
+                      style={{
+                        ...styles.answer,
+                        // Chỉ áp dụng style đáp án đúng khi showAnswers = true
+                        ...(showAnswers && ans.isCorrect ? styles.correctAnswer : {}),
+                      }}
+                    >
+                      {String.fromCharCode(65 + i)}.{" "}
+                      {/* Chỉ hiện dấu ✓ khi có đáp án */}
+                      {showAnswers && ans.isCorrect ? "✓ " : ""}
+                      {ans.text}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              {/* TỰ LUẬN - Có đáp án */}
+              {showAnswers && isOpenEnded && q.model_answer && (
+                <Text style={[styles.answer, styles.correctAnswer]}>
+                  Đáp án mẫu: {q.model_answer}
+                </Text>
+              )}
+
+              {/* TỰ LUẬN - Không đáp án: để khoảng trống viết tay */}
+              {!showAnswers && isOpenEnded && (
+                <View style={styles.blankSpace}>
+                  <View style={{ borderBottomWidth: 1, borderBottomColor: "#ccc", marginBottom: 8 }} />
+                  <View style={{ borderBottomWidth: 1, borderBottomColor: "#ccc", marginBottom: 8 }} />
+                  <View style={{ borderBottomWidth: 1, borderBottomColor: "#ccc", marginBottom: 8 }} />
+                  <View style={{ borderBottomWidth: 1, borderBottomColor: "#ccc" }} />
+                </View>
+              )}
+
+              {/* GIẢI THÍCH - chỉ hiện khi có đáp án */}
+              {showAnswers && showExplanation && q.explanation && (
+                <Text style={styles.explanation}>
+                  Giải thích: {q.explanation}
+                </Text>
+              )}
+            </View>
+          )
+        })}
     </Page>
   </Document>
 )
 
-// --- Hàm xuất PDF (cập nhật để nhận thêm thông tin) ---
-interface GeneratePDFOptions {
-  filename?: string;
-  exerciseName?: string;
-  lessonName?: string;
-  className?: string;
-  bookName?: string;
-}
-
 export const generateAndDownloadPDF = async (
-  questions: InsertedQuestion[], 
+  questions: InsertedQuestion[],
   options: GeneratePDFOptions = {}
 ) => {
   const {
-    filename = "cau-hoi-ai.pdf",
+    filename = "bai-tap.pdf",
     exerciseName = "Bài Tập",
     lessonName = "",
-    className = "",
-    bookName = ""
+    showAnswers = true,
+    showExplanation = true,
   } = options
 
   try {
     const doc = (
-      <MyDocument 
+      <MyDocument
         questions={questions}
         exerciseName={exerciseName}
         lessonName={lessonName}
-        className={className}
-        bookName={bookName}
+        showAnswers={showAnswers}
+        showExplanation={showExplanation}
       />
     )
+
     const blob = await pdf(doc).toBlob()
     saveAs(blob, filename)
   } catch (error) {
-    console.error("❌ Lỗi khi tạo PDF:", error)
+    console.error("Lỗi khi tạo PDF:", error)
+    alert("Không thể tạo PDF. Vui lòng thử lại.")
   }
 }

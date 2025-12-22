@@ -538,10 +538,28 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
               <p>Không có câu hỏi nào được generate.</p>
             )}
           </div>
-          <div className="flex justify-end gap-2 mt-4">
+          <div className="flex justify-end gap-3 mt-6 flex-wrap">
             <Button variant="outline" onClick={() => setShowPreview(false)}>
               Hủy
             </Button>
+
+            <Button
+              variant="secondary"
+              onClick={() =>
+                generateAndDownloadPDF(generatedPreview, {
+                  exerciseName: formData.exercise_name,
+                  lessonName: formData.lesson_name,
+                  className: "",
+                  bookName: "",
+                  filename: `${formData.exercise_name || "Bai-tap"} - khong-dap-an.pdf`,
+                  showAnswers: false,
+                  showExplanation: false,
+                })
+              }
+            >
+              PDF Không Đáp Án
+            </Button>
+
             <Button
               onClick={() =>
                 generateAndDownloadPDF(generatedPreview, {
@@ -549,10 +567,13 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                   lessonName: formData.lesson_name,
                   className: "",
                   bookName: "",
+                  filename: `${formData.exercise_name || "Bai-tap"} - co-dap-an.pdf`,
+                  showAnswers: true,
+                  showExplanation: true,
                 })
               }
             >
-              Tải PDF
+              PDF Có Đáp Án & Giải Thích
             </Button>
           </div>
         </DialogContent>
