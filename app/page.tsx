@@ -114,13 +114,7 @@ export default function QuestionsPage() {
           </h1>
 
           {/* Tên giảng viên */}
-          <p className="text-lg font-semibold text-gray-700">
-              Giáo viên hướng dẫn: <span className="text-primary">NGUYỄN THỊ THÙY MỴ</span>
-            </p>
-            <p className="text-lg font-semibold text-gray-700">
-              Học sinh: <span className="text-primary">Võ Thị Mỹ Tiên</span>
-            </p>
-
+          
 
           <p className="text-xl text-muted-foreground">
             Tạo và quản lý bộ câu hỏi của bạn một cách dễ dàng
