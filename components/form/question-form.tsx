@@ -4,7 +4,7 @@ import { useState, useEffect, type FormEvent, type ChangeEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, Info, GraduationCap, Plus, Minus } from "lucide-react"
+import { Loader2, Info, GraduationCap, Plus, Minus, Languages } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -81,6 +81,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
     })(),
   })
 
+  const [isEnglish, setIsEnglish] = useState(false) // Thêm state cho ngôn ngữ
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [generatedPreview, setGeneratedPreview] = useState<InsertedQuestion[]>([])
@@ -137,13 +138,29 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
     e.preventDefault()
     setError("")
 
-    if (!formData.exercise_name?.trim()) return setError("Vui lòng nhập tên bài tập")
-    if (!formData.lesson_name?.trim()) return setError("Vui lòng nhập tên bài học")
+    const errorMessages = isEnglish 
+      ? {
+          exerciseName: "Please enter exercise name",
+          lessonName: "Please enter lesson name",
+          numQuestions: "Number of questions must be 1-50",
+          selectedTypes: "Please select at least 1 question type",
+          numAnswers: "Number of answers must be 2-5 for multiple choice",
+        }
+      : {
+          exerciseName: "Vui lòng nhập tên bài tập",
+          lessonName: "Vui lòng nhập tên bài học",
+          numQuestions: "Số câu hỏi phải từ 1 đến 50",
+          selectedTypes: "Vui lòng chọn ít nhất 1 loại câu hỏi",
+          numAnswers: "Số đáp án phải từ 2-5 cho trắc nghiệm nhiều lựa chọn",
+        }
+
+    if (!formData.exercise_name?.trim()) return setError(errorMessages.exerciseName)
+    if (!formData.lesson_name?.trim()) return setError(errorMessages.lessonName)
     if ((formData.num_questions || 0) < 1 || (formData.num_questions || 0) > 50)
-      return setError("Số câu hỏi phải từ 1 đến 50")
-    if (formData.selected_types.length === 0) return setError("Vui lòng chọn ít nhất 1 loại câu hỏi")
+      return setError(errorMessages.numQuestions)
+    if (formData.selected_types.length === 0) return setError(errorMessages.selectedTypes)
     if (hasMultipleChoice && (!formData.num_answers || formData.num_answers < 2 || formData.num_answers > 5)) {
-      return setError("Số đáp án phải từ 2-5 cho trắc nghiệm nhiều lựa chọn")
+      return setError(errorMessages.numAnswers)
     }
 
     setIsLoading(true)
@@ -159,7 +176,10 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
         selected_types: formData.selected_types,
         type_quantities: typeQuantities,
       }
-      const response = await fetch("/api/generate-questions", {
+
+      // Chọn API dựa trên ngôn ngữ
+      const apiEndpoint = isEnglish ? "/api/generate-question-english" : "/api/generate-questions"
+      const response = await fetch(apiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(submitData),
@@ -167,7 +187,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || "Lỗi khi tạo câu hỏi")
+        throw new Error(errorData.error || (isEnglish ? "Error generating questions" : "Lỗi khi tạo câu hỏi"))
       }
 
       const generatedData = await response.json()
@@ -176,7 +196,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
       console.log("Generated Questions:", generatedData.questions)
       setShowPreview(true)
     } catch (err: unknown) {
-      setError((err as Error).message || "Lỗi khi tạo câu hỏi. Vui lòng thử lại.")
+      setError((err as Error).message || (isEnglish ? "Error generating questions. Please try again." : "Lỗi khi tạo câu hỏi. Vui lòng thử lại."))
     } finally {
       setIsLoading(false)
     }
@@ -187,7 +207,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
       id: q.id,
       question_text: q.question_text,
       emoji: q.emoji || "",
-      question_type: q.type_name || "Auto-generated",
+      question_type: q.type_name || (isEnglish ? "Auto-generated" : "Tự động"),
       answers: q.answers || [],
       explanation: q.explanation || "",
     }))
@@ -230,7 +250,27 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
     setFormData((prev) => ({ ...prev, num_questions: totalQuestions }))
   }, [formData.selected_types, typeQuantities])
 
-  const difficulties = ["Dễ", "Bình thường", "Khó"]
+  // Điều chỉnh difficulties dựa trên ngôn ngữ
+  const difficulties = isEnglish 
+    ? ["Easy", "Medium", "Hard"] 
+    : ["Dễ", "Bình thường", "Khó"]
+
+  // Labels động cho một số phần
+  const exerciseNameLabel = isEnglish ? "Exercise Name *" : "Tên Bài Tập *"
+  const lessonNameLabel = isEnglish ? "Lesson Content *" : "Nội Dung Bài Học *"
+  const questionTypeLabel = isEnglish ? "Question Types *" : "Loại Câu Hỏi *"
+  const totalQuestionsLabel = isEnglish ? "Total Questions" : "Tổng Số Câu Hỏi"
+  const difficultyLabel = isEnglish ? "Difficulty *" : "Độ Khó *"
+  const numAnswersLabel = isEnglish ? "Number of Answers (for multiple choice) *" : "Số Đáp Án (cho câu trắc nghiệm) *"
+  const createButtonText = isEnglish ? "Generate Questions" : "Tạo Câu Hỏi"
+  const loadingText = isEnglish ? "Generating..." : "Đang Tạo..."
+  const cancelText = isEnglish ? "Cancel" : "Hủy"
+  const previewTitle = isEnglish ? "AI Generated Questions" : "Câu hỏi tạo từ AI"
+  const noQuestionsText = isEnglish ? "No questions generated." : "Không có câu hỏi nào được generate."
+  const sampleAnswerText = isEnglish ? "Sample Answer:" : "Đáp án mẫu:"
+  const typeText = isEnglish ? "Type:" : "Loại:"
+  const pdfNoAnswerText = isEnglish ? "PDF Without Answers" : "PDF Không Đáp Án"
+  const pdfWithAnswerText = isEnglish ? "PDF With Answers & Explanations" : "PDF Có Đáp Án & Giải Thích"
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -240,21 +280,39 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
             <GraduationCap className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h2 className="text-2xl font-semibold text-foreground">Tạo Bài Tập Mới</h2>
-            <p className="text-sm text-muted-foreground">Tạo bài tập tự động bằng AI cho học sinh THPT</p>
+            <h2 className="text-2xl font-semibold text-foreground">
+              {isEnglish ? "Create New Exercise" : "Tạo Bài Tập Mới"}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {isEnglish ? "Create exercises automatically with AI for high school students" : "Tạo bài tập tự động bằng AI cho học sinh THPT"}
+            </p>
           </div>
+        </div>
+
+        {/* Nút toggle ngôn ngữ */}
+        <div className="flex justify-end mt-4">
+          <Button
+            type="button"
+            variant={isEnglish ? "default" : "outline"}
+            onClick={() => setIsEnglish(!isEnglish)}
+            className="flex items-center gap-2"
+            disabled={isLoading}
+          >
+            <Languages className="w-4 h-4" />
+            {isEnglish ? "Tiếng Việt" : "English"}
+          </Button>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
         <div className="space-y-2">
           <Label htmlFor="exercise_name" className="text-base font-medium">
-            Tên Bài Tập <span className="text-destructive">*</span>
+            {exerciseNameLabel}
           </Label>
           <Input
             id="exercise_name"
             name="exercise_name"
-            placeholder="VD: Kiểm tra 15 phút - Phương trình bậc 2"
+            placeholder={isEnglish ? "E.g., Passive Voice Exercises" : "VD: Kiểm tra 15 phút - Phương trình bậc 2"}
             value={formData.exercise_name || ""}
             onChange={handleInputChange}
             disabled={isLoading}
@@ -264,15 +322,16 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
 
         <div className="space-y-2">
           <Label htmlFor="lesson_name" className="text-base font-medium flex items-center gap-2">
-            Nội Dung Bài Học <span className="text-destructive">*</span>
+            {lessonNameLabel}
             <HoverCard>
               <HoverCardTrigger asChild>
                 <Info className="w-4 h-4 text-muted-foreground cursor-help" />
               </HoverCardTrigger>
               <HoverCardContent className="w-80">
                 <p className="text-sm">
-                  Mô tả chi tiết nội dung bài học để AI tạo câu hỏi phù hợp. VD: Phương trình bậc 2 - Công thức nghiệm,
-                  biệt thức delta, điều kiện có nghiệm...
+                  {isEnglish 
+                    ? "Describe the lesson content in detail for AI to generate suitable questions. E.g., Passive voice: formation, uses in academic writing..."
+                    : "Mô tả chi tiết nội dung bài học để AI tạo câu hỏi phù hợp. VD: Phương trình bậc 2 - Công thức nghiệm, biệt thức delta, điều kiện có nghiệm..."}
                 </p>
               </HoverCardContent>
             </HoverCard>
@@ -280,7 +339,9 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
           <Textarea
             id="lesson_name"
             name="lesson_name"
-            placeholder="VD: Chương 3 - Phương trình bậc 2: Công thức nghiệm, biệt thức delta, điều kiện có nghiệm..."
+            placeholder={isEnglish 
+              ? "E.g., Passive Voice Exercises: Rewrite active sentences, identify errors in passive forms..."
+              : "VD: Chương 3 - Phương trình bậc 2: Công thức nghiệm, biệt thức delta, điều kiện có nghiệm..."}
             value={formData.lesson_name || ""}
             onChange={handleInputChange}
             rows={4}
@@ -291,14 +352,14 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
 
         <div className="space-y-4">
           <Label className="text-base font-medium flex items-center gap-2">
-            Loại Câu Hỏi <span className="text-destructive">*</span>
+            {questionTypeLabel}
             <HoverCard>
               <HoverCardTrigger asChild>
                 <Info className="w-4 h-4 text-muted-foreground cursor-help" />
               </HoverCardTrigger>
               <HoverCardContent className="w-80">
                 <p className="text-sm">
-                  Chọn các dạng câu hỏi muốn tạo. Bạn có thể kết hợp nhiều loại trong một bài tập.
+                  {isEnglish ? "Select question types to generate. You can mix multiple types in one exercise." : "Chọn các dạng câu hỏi muốn tạo. Bạn có thể kết hợp nhiều loại trong một bài tập."}
                 </p>
               </HoverCardContent>
             </HoverCard>
@@ -336,7 +397,9 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
 
                       {selected && (
                         <div className="mt-4 flex items-center gap-3">
-                          <Label className="text-sm font-medium min-w-fit">Số câu hỏi:</Label>
+                          <Label className="text-sm font-medium min-w-fit">
+                            {isEnglish ? "Number of questions:" : "Số câu hỏi:"}
+                          </Label>
                           <div className="flex items-center gap-2">
                             <Button
                               type="button"
@@ -375,7 +438,9 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                               <Plus className="w-4 h-4" />
                             </Button>
 
-                            <span className="text-sm text-muted-foreground ml-1">câu</span>
+                            <span className="text-sm text-muted-foreground ml-1">
+                              {isEnglish ? "questions" : "câu"}
+                            </span>
                           </div>
                         </div>
                       )}
@@ -389,7 +454,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
 
         <div className="grid md:grid-cols-2 gap-6">
           <div className="space-y-2">
-            <Label className="text-base font-medium">Tổng Số Câu Hỏi</Label>
+            <Label className="text-base font-medium">{totalQuestionsLabel}</Label>
             <div className="relative">
               <Input
                 type="number"
@@ -398,26 +463,26 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                 className="h-11 bg-muted/30 cursor-not-allowed font-semibold text-lg"
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground bg-background px-2 rounded">
-                tự động
+                {isEnglish ? "auto" : "tự động"}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">Tổng số câu = tổng các loại đã chọn</p>
+            <p className="text-xs text-muted-foreground">
+              {isEnglish ? "Total questions = sum of selected types" : "Tổng số câu = tổng các loại đã chọn"}
+            </p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="difficulty" className="text-base font-medium flex items-center gap-2">
-              Độ Khó <span className="text-destructive">*</span>
+              {difficultyLabel}
               <HoverCard>
                 <HoverCardTrigger asChild>
                   <Info className="w-4 h-4 text-muted-foreground cursor-help" />
                 </HoverCardTrigger>
                 <HoverCardContent className="w-80">
                   <p className="text-sm">
-                    <strong>Dễ:</strong> Câu hỏi cơ bản
-                    <br />
-                    <strong>Bình thường:</strong> Câu hỏi trung bình
-                    <br />
-                    <strong>Khó:</strong> Câu hỏi nâng cao
+                    {isEnglish 
+                      ? "<strong>Easy:</strong> Basic questions<br/><strong>Medium:</strong> Average questions<br/><strong>Hard:</strong> Advanced questions"
+                      : "<strong>Dễ:</strong> Câu hỏi cơ bản<br/><strong>Bình thường:</strong> Câu hỏi trung bình<br/><strong>Khó:</strong> Câu hỏi nâng cao"}
                   </p>
                 </HoverCardContent>
               </HoverCard>
@@ -425,13 +490,13 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
             <select
               id="difficulty"
               name="difficulty"
-              value={formData.difficulty || "Medium"}
+              value={formData.difficulty || (isEnglish ? "Medium" : "Bình thường")}
               onChange={handleInputChange}
               disabled={isLoading}
               className="w-full h-11 px-3 border border-input rounded-lg bg-background text-foreground font-medium"
             >
               {difficulties.map((diff) => (
-                <option key={diff} value={diff}>
+                <option key={diff} value={isEnglish ? diff : diff === "Bình thường" ? "Medium" : diff.toLowerCase()}>
                   {diff}
                 </option>
               ))}
@@ -442,13 +507,17 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
         {hasMultipleChoice && (
           <div className="space-y-2">
             <Label htmlFor="num_answers" className="text-base font-medium flex items-center gap-2">
-              Số Đáp Án (cho câu trắc nghiệm) <span className="text-destructive">*</span>
+              {numAnswersLabel}
               <HoverCard>
                 <HoverCardTrigger asChild>
                   <Info className="w-4 h-4 text-muted-foreground cursor-help" />
                 </HoverCardTrigger>
                 <HoverCardContent className="w-80">
-                  <p className="text-sm">Số lượng đáp án cho câu hỏi trắc nghiệm nhiều lựa chọn (2-5 đáp án)</p>
+                  <p className="text-sm">
+                    {isEnglish 
+                      ? "Number of options for multiple-choice questions (2-5 options)"
+                      : "Số lượng đáp án cho câu hỏi trắc nghiệm nhiều lựa chọn (2-5 đáp án)"}
+                  </p>
                 </HoverCardContent>
               </HoverCard>
             </Label>
@@ -464,7 +533,9 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
               disabled={isLoading}
               className="h-11"
             />
-            <p className="text-xs text-muted-foreground">Từ 2 đến 5 đáp án</p>
+            <p className="text-xs text-muted-foreground">
+              {isEnglish ? "From 2 to 5 options" : "Từ 2 đến 5 đáp án"}
+            </p>
           </div>
         )}
 
@@ -482,16 +553,16 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
             disabled={isLoading}
             className="h-11 px-6 bg-transparent"
           >
-            Hủy
+            {cancelText}
           </Button>
           <Button type="submit" disabled={isLoading} className="h-11 px-8">
             {isLoading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Đang Tạo...
+                {loadingText}
               </>
             ) : (
-              "Tạo Câu Hỏi"
+              createButtonText
             )}
           </Button>
         </div>
@@ -500,7 +571,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Câu hỏi tạo từ AI</DialogTitle>
+            <DialogTitle>{previewTitle}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {generatedPreview.length > 0 ? (
@@ -527,20 +598,28 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                       })}
                     </ul>
                   ) : q.type_name === "multiple_choice" ? (
-                    <p className="text-sm text-muted-foreground mt-2">Không có đáp án chi tiết (kiểm tra backend).</p>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {isEnglish ? "No detailed answers (check backend)." : "Không có đáp án chi tiết (kiểm tra backend)."}
+                    </p>
                   ) : null}
-                  {q.model_answer && <p className="mt-2 italic text-sm">Đáp án mẫu: {q.model_answer}</p>}
+                  {q.model_answer && (
+                    <p className="mt-2 italic text-sm">
+                      {sampleAnswerText} {q.model_answer}
+                    </p>
+                  )}
                   <p className="mt-2 italic text-sm">{q.explanation}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Loại: {q.type_name || "Tự động"}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {typeText} {q.type_name || (isEnglish ? "Auto-generated" : "Tự động")}
+                  </p>
                 </div>
               ))
             ) : (
-              <p>Không có câu hỏi nào được generate.</p>
+              <p>{noQuestionsText}</p>
             )}
           </div>
           <div className="flex justify-end gap-3 mt-6 flex-wrap">
             <Button variant="outline" onClick={() => setShowPreview(false)}>
-              Hủy
+              {cancelText}
             </Button>
 
             <Button
@@ -551,13 +630,13 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                   lessonName: formData.lesson_name,
                   className: "",
                   bookName: "",
-                  filename: `${formData.exercise_name || "Bai-tap"} - khong-dap-an.pdf`,
+                  filename: `${formData.exercise_name || (isEnglish ? "Exercise" : "Bai-tap")} - ${isEnglish ? "no-answers" : "khong-dap-an"}.pdf`,
                   showAnswers: false,
                   showExplanation: false,
                 })
               }
             >
-              PDF Không Đáp Án
+              {pdfNoAnswerText}
             </Button>
 
             <Button
@@ -567,13 +646,13 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                   lessonName: formData.lesson_name,
                   className: "",
                   bookName: "",
-                  filename: `${formData.exercise_name || "Bai-tap"} - co-dap-an.pdf`,
+                  filename: `${formData.exercise_name || (isEnglish ? "Exercise" : "Bai-tap")} - ${isEnglish ? "with-answers" : "co-dap-an"}.pdf`,
                   showAnswers: true,
                   showExplanation: true,
                 })
               }
             >
-              PDF Có Đáp Án & Giải Thích
+              {pdfWithAnswerText}
             </Button>
           </div>
         </DialogContent>
