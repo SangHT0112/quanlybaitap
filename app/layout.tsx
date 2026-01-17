@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "AI Study Assistant - Ôn tập thông minh",
+  title: "Q-GEN AI - Ôn tập thông minh",
   description: "Ứng dụng ôn tập thông minh hỗ trợ học tập bằng AI",
 }
 

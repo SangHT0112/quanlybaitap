@@ -15,7 +15,7 @@ export default function QuestionsPage() {
         {/* Header */}
         <div className="space-y-4">
           <h1 className="text-6xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Tạo câu hỏi bằng AI
+            Q-GEN AI: NGƯỜI BẠN ÔN TẬP SỐ CỦA HỌC SINH THPT
           </h1>
           <div className="space-y-2 text-lg text-muted-foreground">
               <p>
