@@ -12,6 +12,13 @@ export interface Question {
   answers: Answer[]
   explanation: string
 }
+export interface PreviewAnswer {
+  id?: number
+  answer_text?: string
+  text?: string
+  is_correct?: boolean
+  correct?: boolean
+}
 
 export interface QuestionFormData {
   // Fields for generation (new exercise)
@@ -19,7 +26,7 @@ export interface QuestionFormData {
   type?: 'multiple_choice' | 'open_ended' | 'mixed';
   // class_id?: number;  // Changed: string for Select value
   // book_id?: number;
-    type_quantities?: Record<'multiple_choice' | 'open_ended' | 'true_false' | 'multiple_select', number>
+  type_quantities?: Record<'multiple_choice' | 'open_ended' | 'true_false' | 'multiple_select', number>
   lesson_name?: string;
   num_questions?: number;
   num_answers?: number;
@@ -28,15 +35,15 @@ export interface QuestionFormData {
   selected_types?: ('multiple_choice' | 'open_ended' | 'true_false' | 'multiple_select')[];  // Available question types
 
   // Fields for manual/edit single question (legacy/optional)
-  topic?: string;
-  quantity?: number;
-  number_of_answers?: number;
-  description?: string;
-  question_text?: string;
-  emoji?: string;
-  question_type?: string;
-  answers?: Answer[];
-  explanation?: string;
+  // topic?: string;
+  // quantity?: number;
+  // number_of_answers?: number;
+  // description?: string;
+  // question_text?: string;
+  // emoji?: string;
+  // question_type?: string;
+  // answers?: Answer[];
+  // explanation?: string;
 }
 
 export interface InsertedQuestion {
@@ -54,7 +61,6 @@ export interface InsertedQuestion {
 }
 
 export interface QuestionFormProps {
-  onSubmit: (data: QuestionFormData | Question | Question[]) => void
   onCancel: () => void
   initialData?: Partial<QuestionFormData>
   classes?: Class[];  // Optional, passed from parent

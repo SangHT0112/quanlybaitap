@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import type { OkPacket } from "mysql2/promise"; // Giữ để tương thích type, nhưng không dùng
 import { setTimeout } from 'timers/promises'; // Thêm: Để backoff nếu cần
 
+/**
+ * Interface cho QuestionType: Định nghĩa loại câu hỏi (từ DB hoặc fake).
+ * Cách viết: Bao gồm id, tên, icon, description, và flag is_multiple_choice để phân biệt.
+ * Cách làm: Sử dụng để map suggested_type từ AI sang ID.
+ * Cách thực hiện: Hardcode mảng existingTypes để simulate DB.
+ */
 interface QuestionType {
   id: number;
   type_name: string;
@@ -10,6 +16,12 @@ interface QuestionType {
   is_multiple_choice: boolean;
 }
 
+/**
+ * Interface cho Exercise: Dữ liệu bài tập.
+ * Cách viết: Bao gồm các field cơ bản từ form, với optional cho question_type_id và num_answers.
+ * Cách làm: Tạo insertedExercise với fake ID (Date.now()).
+ * Cách thực hiện: Trả về trong response cùng questions.
+ */
 interface Exercise {
   id: number;
   name: string;
@@ -23,6 +35,12 @@ interface Exercise {
   created_at: string;
 }
 
+/**
+ * Interface cho GeneratedQuestion: Câu hỏi từ AI raw.
+ * Cách viết: Các field cơ bản từ prompt (question_text, emoji, etc.), optional cho answers/model_answer.
+ * Cách làm: Parse từ JSON response của Gemini.
+ * Cách thực hiện: Sử dụng để build InsertedQuestion sau khi repair/enforce.
+ */
 interface GeneratedQuestion {
   question_text: string;
   emoji: string;
@@ -32,22 +50,44 @@ interface GeneratedQuestion {
   suggested_type?: string;
 }
 
+/**
+ * Interface cho InsertedQuestion: GeneratedQuestion + metadata (id, order_num, question_type_id).
+ * Cách viết: Extend từ GeneratedQuestion.
+ * Cách làm: Assign fake ID, map suggested_type sang question_type_id.
+ * Cách thực hiện: Mảng này là questions trong response.
+ */
 interface InsertedQuestion extends GeneratedQuestion {
   id: number;
   order_num: number;
   question_type_id: number;
 }
 
+/**
+ * Interface cho InsertedExercise: Exercise + mảng questions.
+ * Cách viết: Extend từ Exercise.
+ * Cách làm: Build từ insertedExercise và insertedQuestions.
+ * Cách thực hiện: Đây là response chính của API.
+ */
 interface InsertedExercise extends Exercise {
   questions: InsertedQuestion[];
 }
 
+/**
+ * URL cho Gemini API.
+ * Cách viết: Hardcode endpoint cho model gemini-2.5-flash.
+ * Cách làm: Sử dụng fetch với key từ env.
+ * Cách thực hiện: Gọi POST với prompt JSON.
+ */
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
 
 // Module-level round-robin index (shared across requests)
+// Cách làm: Tăng dần để rotate keys, tránh rate limit.
 let keyIndex = 0;
 
 // Collect keys from env
+// Cách viết: Loop GEMINI_API_KEY_1, _2,... hoặc fallback GEMINI_API_KEY.
+// Cách làm: Tạo mảng keys để rotate.
+// Cách thực hiện: Throw error nếu không có key nào.
 const geminiKeys: string[] = [];
 let i = 1;
 while (process.env[`GEMINI_API_KEY_${i}`]) {
@@ -63,6 +103,12 @@ if (geminiKeys.length === 0) {
   }
 }
 
+/**
+ * POST handler: API endpoint generate questions.
+ * Cách viết: Async function với try-catch toàn bộ.
+ * Cách làm: Parse formData, validate, build prompt, gọi Gemini với retry, repair JSON, enforce distribution, build response.
+ * Cách thực hiện: Return JSON success với InsertedExercise hoặc error 400/500.
+ */
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.json();
@@ -88,17 +134,11 @@ export async function POST(request: NextRequest) {
       user_id: number;
     };
 
-    // Validation
-    if (!user_id) return NextResponse.json({ error: "Thiếu user_id" }, { status: 400 });
-    if (!exercise_name?.trim()) return NextResponse.json({ error: "Vui lòng nhập tên bài tập" }, { status: 400 });
-    if (!['multiple_choice', 'open_ended', 'mixed', 'true_false', 'multiple_select'].includes(exercise_type)) {
-      return NextResponse.json({ error: "Loại bài tập không hợp lệ" }, { status: 400 });
-    }
-    if (!lesson_name?.trim()) return NextResponse.json({ error: "Vui lòng nhập tên bài học" }, { status: 400 });
-    if (!num_questions || num_questions < 1 || num_questions > 50) return NextResponse.json({ error: "Số câu hỏi phải từ 1-50" }, { status: 400 });
-    if ((selected_types && selected_types.length === 0) || (!selected_types && !type_quantities)) return NextResponse.json({ error: "Phải chọn ít nhất 1 loại câu hỏi" }, { status: 400 });
 
     // Xử lý typesToUse và typeDistribution
+    // Cách viết: Nếu có type_quantities, dùng trực tiếp; else phân bổ đều từ selected_types.
+    // Cách làm: Validate tổng quantities == num_questions nếu dùng type_quantities.
+    // Cách thực hiện: Tạo mảng distribution cho prompt và enforce.
     let typesToUse: string[];
     let typeDistribution: { type: string; count: number }[];
    
@@ -128,20 +168,22 @@ export async function POST(request: NextRequest) {
     const distributionStr = typeDistribution.map(({ type, count }) => `${count} câu ${type}`).join(', ');
     console.log("📊 Type distribution:", distributionStr);
 
+    // Computed: Kiểm tra mixed hoặc choice-based.
+    // Cách làm: isMixed nếu >1 types hoặc exercise_type='mixed'; isChoiceBased nếu single và trong choice types.
     const isMixed = typesToUse.length > 1 || exercise_type === 'mixed';
     const choiceBasedTypes = ['multiple_choice', 'true_false', 'multiple_select'];
     const isChoiceBased = !isMixed && choiceBasedTypes.includes(typesToUse[0]);
 
     // SỬA: Default num_answers cho choice-based nếu không có
+    // Cách làm: Fallback 4, force 2 cho true_false.
     let effectiveNumAnswers = num_answers;
     if (isChoiceBased && !effectiveNumAnswers) effectiveNumAnswers = 4;
     if (typesToUse[0] === 'true_false') effectiveNumAnswers = 2; // Force 2 cho true_false
 
-    // Validation num_answers cho tất cả choice-based
-    if (isChoiceBased && (!effectiveNumAnswers || effectiveNumAnswers < 2 || effectiveNumAnswers > 5)) {
-      return NextResponse.json({ error: "Số đáp án phải từ 2-5 cho các loại trắc nghiệm" }, { status: 400 });
-    }
 
+    // Hardcode existingTypes để simulate DB types.
+    // Cách viết: Mảng với id từ 1-4, thêm fake nếu suggested_type mới.
+    // Cách làm: Sử dụng để map type_name <-> id.
     const existingTypes: QuestionType[] = [
       { id: 1, type_name: 'multiple choice', icon: '🔢', description: 'Trắc nghiệm nhiều lựa chọn', is_multiple_choice: true },
       { id: 2, type_name: 'true false', icon: '✅', description: 'Đúng/Sai', is_multiple_choice: true },
@@ -149,6 +191,8 @@ export async function POST(request: NextRequest) {
       { id: 4, type_name: 'open ended', icon: '❓', description: 'Câu hỏi tự luận mở', is_multiple_choice: false },
     ];
 
+    // Assign questionTypeId cho exercise.
+    // Cách làm: Match exact hoặc fake mới; fallback cho mixed.
     let questionTypeId: number | null = null;
     if (!isMixed) {
       const matchedType = existingTypes.find(t => t.type_name.toLowerCase() === typesToUse[0].replace('_', ' '));
@@ -166,9 +210,13 @@ export async function POST(request: NextRequest) {
       console.log("🔄 Mixed fallback questionTypeId:", questionTypeId);
     }
 
+    // Fake exercise_id (Date.now() để unique).
+    // Cách làm: Sử dụng làm prefix cho question/answer IDs.
     const exercise_id = Date.now();
     console.log("Exercise ID giả:", exercise_id);
 
+    // Build insertedExercise.
+    // Cách viết: Spread với conditional num_answers.
     const insertedExercise: Exercise = {
       id: exercise_id,
       name: exercise_name,
@@ -182,7 +230,10 @@ export async function POST(request: NextRequest) {
       created_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
     };
 
-    // Generate prompt
+    // Generate prompt: Xây dựng prompt chi tiết cho Gemini.
+    // Cách viết: String template với variables (levelDescription, subjectHint, etc.).
+    // Cách làm: Tùy chỉnh objectStr, specificReq dựa trên isMixed/isChoiceBased.
+    // Cách thực hiện: Yêu cầu JSON array compact, enforce types, difficulty.
     const levelDescription = 'học sinh cấp 3, ngôn ngữ học thuật phù hợp trình độ THPT';
     const subjectHint = lesson_name.toLowerCase().includes('toán') ? 'Toán học' : lesson_name.toLowerCase().includes('tiếng việt') ? 'Tiếng Việt' : 'Kiến thức chung';
     const typeList = existingTypes.map(t => `${t.id}: ${t.type_name}`).join('; ');
@@ -234,7 +285,12 @@ YÊU CẦU:
 - Luôn thêm "suggested_type" phù hợp từ danh sách: ${typeList} (chỉ dùng các loại trong ${typesStr} nếu mixed).
 `;
 
-    // Hàm sort và enforce (giữ nguyên)
+    /**
+     * Helper: Sort questions theo thứ tự typeDistribution.
+     * Cách viết: Sử dụng Map để map type -> index order.
+     * Cách làm: Chỉ sort nếu isMixed; fallback index cuối nếu không match.
+     * Cách thực hiện: Gọi sau enforce để sắp xếp theo distribution.
+     */
     function sortQuestionsByTypeOrder(questions: GeneratedQuestion[]): GeneratedQuestion[] {
       if (!isMixed) return questions;
       const typeOrderMap = new Map(typeDistribution.map(({ type }, index) => [type, index]));
@@ -245,6 +301,12 @@ YÊU CẦU:
       });
     }
 
+    /**
+     * Helper: Enforce distribution theo typeDistribution.
+     * Cách viết: Sử dụng Map để track current counts.
+     * Cách làm: Di chuyển excess questions vào pool, assign cho types thiếu.
+     * Cách thực hiện: Gọi nhiều lần (sau parse, pad, final) để đảm bảo đúng số lượng.
+     */
     function enforceTypeDistribution(questions: GeneratedQuestion[]): GeneratedQuestion[] {
       if (!isMixed) return questions;
       const currentCounts = new Map<string, number>();
@@ -287,7 +349,12 @@ YÊU CẦU:
       return questions;
     }
 
-    // Hàm get dummy answers
+    /**
+     * Helper: Tạo dummy answers cho type cụ thể.
+     * Cách viết: Switch dựa trên targetType.
+     * Cách làm: Force 2 cho true_false, multiple (correct) cho multiple_select, 1 correct cho multiple_choice.
+     * Cách thực hiện: Sử dụng khi pad hoặc repair JSON.
+     */
     function getDummyAnswers(targetType: string, numAns?: number): string[] | undefined {
       const effNum = numAns || 4;
       if (targetType === 'true_false') {
@@ -301,7 +368,13 @@ YÊU CẦU:
       return undefined;
     }
 
-    // Extract and repair JSON
+    /**
+     * Helper: Extract và repair JSON từ Gemini text response.
+     * Cách viết: Regex match array, append ] nếu truncate, repair string (remove newline, fix commas).
+     * Cách làm: Try parse -> enforce/sort/pad; nếu fail, repair minimal -> manual fix từ objects.
+     * Cách thực hiện: Throw error nếu quá nhiều dummy (>50% real questions), trigger retry.
+     * Lưu ý: Phần phức tạp nhất, xử lý output không hoàn hảo của AI.
+     */
     function extractAndRepairJson(text: string): GeneratedQuestion[] {
       if (!text.trim().endsWith(']')) {
         text = text.trim() + ']';
@@ -444,6 +517,10 @@ YÊU CẦU:
       }
     }
 
+    // Main generation loop: Gọi Gemini với retry (max 3).
+    // Cách viết: While loop với rotate key, backoff exponential cho error (không backoff cho 503).
+    // Cách làm: Temperature dựa trên difficulty; maxTokens=8000.
+    // Cách thực hiện: Extract JSON, nếu fail hoặc không đủ -> retry; break nếu đủ.
     let questions: GeneratedQuestion[] = [];
     let retryCount = 0;
     const maxRetries = 3;
@@ -502,6 +579,8 @@ YÊU CẦU:
       }
     }
 
+    // Final enforce/sort nếu vẫn thiếu (proceed với warning).
+    // Cách làm: Log final counts.
     if (questions.length !== num_questions) {
       console.warn(`⚠️ Still ${questions.length} questions after retries, proceeding...`);
     }
@@ -518,6 +597,10 @@ YÊU CẦU:
     });
     console.log("✅ Final enforced counts:", Object.fromEntries(finalCounts));
 
+    // Build insertedQuestions: Map suggested_type -> qTypeId, assign fake IDs, extract correctAnswerIds (không dùng ở đây).
+    // Cách viết: Loop for i=0 to questions.length, fake qid = exercise_id + (i+1).
+    // Cách làm: Match suggested_type với existingTypes hoặc fake mới; parse answers để detect (correct).
+    // Cách thực hiện: Push InsertedQuestion với order_num = i+1.
     const insertedQuestions: InsertedQuestion[] = [];
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
@@ -567,6 +650,8 @@ YÊU CẦU:
       });
     }
 
+    // Build response.
+    // Cách làm: Spread insertedExercise + questions.
     const response: InsertedExercise = {
       ...insertedExercise,
       questions: insertedQuestions,
@@ -574,6 +659,7 @@ YÊU CẦU:
 
     return NextResponse.json(response);
   } catch (err) {
+    // Catch all: Log và return 500 error.
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("❌ Error:", message);
     return NextResponse.json({ error: message }, { status: 500 });

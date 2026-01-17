@@ -9,17 +9,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import type { QuestionFormData, InsertedQuestion, QuestionFormProps, Question } from "@/types/question"
+import type { QuestionFormData, InsertedQuestion, QuestionFormProps, PreviewAnswer } from "@/types/question"
 import { generateAndDownloadPDF } from "@/components/PDFGenerator"
 
-interface PreviewAnswer {
-  id?: number
-  answer_text?: string
-  text?: string
-  is_correct?: boolean
-  correct?: boolean
-}
 
+/**
+ * Mảng các loại câu hỏi có sẵn.
+ * Cách viết: Sử dụng const assertion (as const) để TypeScript infer type chính xác.
+ * Cách làm: Mỗi item có value (key cho state), label (hiển thị), description (mô tả), icon (emoji cho UI).
+ * Cách thực hiện: Sử dụng để render danh sách checkbox động.
+ */
 const availableTypes = [
   { value: "multiple_choice", label: "Trắc nghiệm nhiều lựa chọn", description: "1 đáp án đúng", icon: "📝" },
   { value: "true_false", label: "Đúng/Sai", description: "Câu hỏi nhị phân", icon: "✓" },
@@ -27,13 +26,30 @@ const availableTypes = [
   { value: "open_ended", label: "Tự luận", description: "Câu hỏi mở", icon: "✍" },
 ] as const
 
+/**
+ * Component chính: QuestionForm - Form tạo bài tập câu hỏi với AI.
+ * Props: onCancel (callback hủy form), initialData (dữ liệu khởi tạo nếu edit).
+ * Cách viết: Sử dụng functional component với hooks (useState, useEffect).
+ * Cách làm: Quản lý state phức tạp (formData, typeQuantities, ngôn ngữ, loading, preview).
+ * Cách thực hiện: Render form -> Submit gọi API -> Hiển thị preview trong Dialog -> Tùy chọn download PDF.
+ */
 export default function QuestionForm({ onCancel, initialData }: QuestionFormProps) {
+  // Lấy user từ localStorage để lấy userId (mặc định 1 nếu không có).
+  // Cách làm: Parse JSON từ string, an toàn với null check.
   const userStr = localStorage.getItem("user")
   const user = userStr ? JSON.parse(userStr) : null
   const userId = user?.id || 1
 
+  // Khởi tạo state cho loại câu hỏi đã chọn và loại chính.
+  // Cách viết: Sử dụng initialData để hỗ trợ edit form.
   const initialSelectedTypes = initialData?.selected_types || ["multiple_choice"]
   const initialType = initialData?.type || (initialSelectedTypes.length > 1 ? "mixed" : initialSelectedTypes[0])
+
+  /**
+   * State cho số lượng câu hỏi theo từng loại.
+   * Cách làm: Khởi tạo từ initialData, mặc định 5 nếu selected, 0 nếu không.
+   * Cách thực hiện: Cập nhật khi toggle loại câu hỏi.
+   */ 
   const [typeQuantities, setTypeQuantities] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {}
     availableTypes.forEach((t) => {
@@ -43,26 +59,24 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
     return init
   })
 
+  // Type cho key của typeQuantities (để TypeScript strict).
   type QuestionTypeKeys = "multiple_choice" | "true_false" | "multiple_select" | "open_ended"
 
+  /**
+   * State chính cho form data.
+   * Cách viết: Sử dụng Required<QuestionFormData> để đảm bảo tất cả field có giá trị mặc định.
+   * Cách làm: Khởi tạo từ initialData, với fallback cho type_quantities.
+   * Cách thực hiện: Cập nhật qua handleInputChange, tự động tính num_questions từ typeQuantities.
+   */
   const [formData, setFormData] = useState<Required<QuestionFormData>>({
     exercise_name: initialData?.exercise_name || "",
     type: initialType as "multiple_choice" | "open_ended" | "mixed",
     selected_types: initialSelectedTypes as QuestionTypeKeys[],
-    lesson_name: initialData?.lesson_name || initialData?.topic || "",
-    num_questions: initialData?.num_questions || initialData?.quantity || 5,
-    num_answers: initialData?.num_answers || initialData?.number_of_answers || 4,
+    lesson_name: initialData?.lesson_name || "",
+    num_questions: initialData?.num_questions || 5,
+    num_answers: initialData?.num_answers || 4,
     difficulty: initialData?.difficulty || "Medium",
     user_id: initialData?.user_id || userId,
-    topic: "",
-    quantity: 0,
-    number_of_answers: 0,
-    description: "",
-    question_text: "",
-    emoji: "",
-    question_type: "",
-    answers: [],
-    explanation: "",
     type_quantities: (() => {
       const init: Record<QuestionTypeKeys, number> = {
         multiple_choice: 5,
@@ -81,45 +95,69 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
     })(),
   })
 
-  const [isEnglish, setIsEnglish] = useState(false) // Thêm state cho ngôn ngữ
+  // State cho ngôn ngữ (toggle English/Vietnamese).
+  // Cách làm: Ảnh hưởng đến label, placeholder, API endpoint, error messages.
+  const [isEnglish, setIsEnglish] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [generatedPreview, setGeneratedPreview] = useState<InsertedQuestion[]>([])
   const [showPreview, setShowPreview] = useState(false)
 
+  // Computed: Kiểm tra có loại multiple_choice không (để hiển thị num_answers).
   const hasMultipleChoice = formData.selected_types.includes("multiple_choice")
 
+  /**
+   * Handler cho input change.
+   * Cách viết: Generic cho Input/Textarea/Select.
+   * Cách làm: Parse number cho num_questions/num_answers, string cho các field khác.
+   * Cách thực hiện: Cập nhật state formData immutable (spread prev).
+   */
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     const parsedValue = ["num_questions", "num_answers"].includes(name) ? Number.parseInt(value) || 0 : value
     setFormData((prev) => ({ ...prev, [name]: parsedValue }))
   }
 
+  /**
+   * Handler toggle loại câu hỏi.
+   * Cách làm: Thêm/xóa khỏi selected_types, cập nhật type chính (mixed nếu >1).
+   * Cách thực hiện: Đồng bộ với typeQuantities (set 5 nếu mới chọn, 0 nếu bỏ).
+   */
   const handleTypeChange = (typeValue: "multiple_choice" | "open_ended" | "true_false" | "multiple_select") => {
+    // Kiểm tra loại này đã được chọn chưa (boolean flag để quyết định add/remove).
     const wasSelected = formData.selected_types.includes(typeValue)
+    
+    // Tạo mảng mới: Nếu đã chọn thì filter bỏ, else thêm vào (immutable update, tránh mutate state trực tiếp).
     const newTypes = wasSelected
-      ? formData.selected_types.filter((t) => t !== typeValue)
-      : [...formData.selected_types, typeValue]
+      ? formData.selected_types.filter((t) => t !== typeValue)  // Remove: Lọc ra các type khác typeValue.
+      : [...formData.selected_types, typeValue]  // Add: Spread + push mới.
 
+    // Logic cho type chính: Nếu >1 loại thì "mixed", else lấy loại đầu (fallback "multiple_choice" nếu empty).
     const newType = newTypes.length > 1 ? "mixed" : newTypes[0] || "multiple_choice"
 
+    // Cập nhật formData immutable: Spread prev, override selected_types và type (cast type để TypeScript happy).
     setFormData((prev) => ({
       ...prev,
       selected_types: newTypes as ("multiple_choice" | "open_ended" | "true_false" | "multiple_select")[],
       type: newType as "multiple_choice" | "open_ended" | "mixed",
     }))
 
+    // Cập nhật typeQuantities riêng: Tạo copy, rồi set quantity dựa trên wasSelected.
     setTypeQuantities((prev) => {
-      const newQ = { ...prev }
+      const newQ = { ...prev }  // Immutable copy.
       if (wasSelected) {
-        newQ[typeValue] = 0
+        newQ[typeValue] = 0  // Bỏ chọn: Set quantity = 0 (ẩn controls, tránh tính vào tổng).
       } else {
-        if (newQ[typeValue] <= 0) newQ[typeValue] = 5
+        if (newQ[typeValue] <= 0) newQ[typeValue] = 5  // Mới chọn: Set mặc định 5 (nếu đã có >0 thì giữ nguyên, nhưng thường là 0).
       }
       return newQ
     })
   }
 
+  /**
+   * Tăng số lượng câu hỏi cho loại cụ thể.
+   * Cách làm: Giới hạn 1-50, sử dụng Math.min/max.
+   */
   const incrementQuantity = (typeValue: string) => {
     setTypeQuantities((prev) => ({
       ...prev,
@@ -127,6 +165,10 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
     }))
   }
 
+  /**
+   * Giảm số lượng câu hỏi cho loại cụ thể.
+   * Cách làm: Giới hạn tối thiểu 1.
+   */
   const decrementQuantity = (typeValue: string) => {
     setTypeQuantities((prev) => ({
       ...prev,
@@ -134,34 +176,16 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
     }))
   }
 
+  /**
+   * Handler submit form: Gọi API generate câu hỏi.
+   * Cách viết: Async function với try-catch.
+   * Cách làm: Validate trước (error messages đa ngôn ngữ), submit data với class_id/book_id mặc định=1.
+   * Cách thực hiện: Chọn API dựa trên isEnglish (/api/generate-question-english hoặc /api/generate-questions),
+   *                 set preview và show Dialog nếu thành công.
+   */
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError("")
-
-    const errorMessages = isEnglish 
-      ? {
-          exerciseName: "Please enter exercise name",
-          lessonName: "Please enter lesson name",
-          numQuestions: "Number of questions must be 1-50",
-          selectedTypes: "Please select at least 1 question type",
-          numAnswers: "Number of answers must be 2-5 for multiple choice",
-        }
-      : {
-          exerciseName: "Vui lòng nhập tên bài tập",
-          lessonName: "Vui lòng nhập tên bài học",
-          numQuestions: "Số câu hỏi phải từ 1 đến 50",
-          selectedTypes: "Vui lòng chọn ít nhất 1 loại câu hỏi",
-          numAnswers: "Số đáp án phải từ 2-5 cho trắc nghiệm nhiều lựa chọn",
-        }
-
-    if (!formData.exercise_name?.trim()) return setError(errorMessages.exerciseName)
-    if (!formData.lesson_name?.trim()) return setError(errorMessages.lessonName)
-    if ((formData.num_questions || 0) < 1 || (formData.num_questions || 0) > 50)
-      return setError(errorMessages.numQuestions)
-    if (formData.selected_types.length === 0) return setError(errorMessages.selectedTypes)
-    if (hasMultipleChoice && (!formData.num_answers || formData.num_answers < 2 || formData.num_answers > 5)) {
-      return setError(errorMessages.numAnswers)
-    }
 
     setIsLoading(true)
 
@@ -202,46 +226,13 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
     }
   }
 
-  const confirmSave = () => {
-    const mappedQuestions: Question[] = generatedPreview.map((q) => ({
-      id: q.id,
-      question_text: q.question_text,
-      emoji: q.emoji || "",
-      question_type: q.type_name || (isEnglish ? "Auto-generated" : "Tự động"),
-      answers: q.answers || [],
-      explanation: q.explanation || "",
-    }))
 
-    setGeneratedPreview([])
-    setShowPreview(false)
 
-    setFormData({
-      exercise_name: "",
-      type: "multiple_choice",
-      selected_types: ["multiple_choice"],
-      lesson_name: "",
-      num_questions: 5,
-      num_answers: 4,
-      difficulty: "Medium",
-      user_id: userId,
-      topic: "",
-      quantity: 0,
-      number_of_answers: 0,
-      description: "",
-      question_text: "",
-      emoji: "",
-      question_type: "",
-      answers: [],
-      explanation: "",
-      type_quantities: {
-        multiple_choice: 5,
-        true_false: 5,
-        multiple_select: 5,
-        open_ended: 5,
-      },
-    })
-  }
-
+  /**
+   * useEffect: Tự động cập nhật num_questions = tổng typeQuantities của selected_types.
+   * Cách làm: Chạy khi selected_types hoặc typeQuantities thay đổi.
+   * Cách thực hiện: Tính sum bằng reduce.
+   */
   useEffect(() => {
     const totalQuestions = formData.selected_types.reduce((sum, type) => {
       return sum + (typeQuantities[type] || 0)
@@ -251,11 +242,13 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
   }, [formData.selected_types, typeQuantities])
 
   // Điều chỉnh difficulties dựa trên ngôn ngữ
+  // Cách làm: Mảng động để hiển thị label phù hợp.
   const difficulties = isEnglish 
     ? ["Easy", "Medium", "Hard"] 
     : ["Dễ", "Bình thường", "Khó"]
 
-  // Labels động cho một số phần
+  // Labels động cho một số phần (đa ngôn ngữ)
+  // Cách viết: Object hoặc ternary để switch nhanh.
   const exerciseNameLabel = isEnglish ? "Exercise Name *" : "Tên Bài Tập *"
   const lessonNameLabel = isEnglish ? "Lesson Content *" : "Nội Dung Bài Học *"
   const questionTypeLabel = isEnglish ? "Question Types *" : "Loại Câu Hỏi *"
@@ -274,6 +267,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
 
   return (
     <div className="max-w-4xl mx-auto">
+      {/* Header: Tiêu đề và mô tả form */}
       <div className="mb-8 border-b border-border pb-6">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -290,6 +284,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
         </div>
 
         {/* Nút toggle ngôn ngữ */}
+        {/* Cách làm: Button với icon Languages, variant thay đổi dựa trên state. */}
         <div className="flex justify-end mt-4">
           <Button
             type="button"
@@ -304,7 +299,9 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
         </div>
       </div>
 
+      {/* Form chính: Các field input */}
       <form onSubmit={handleSubmit} className="space-y-8">
+        {/* Field: Tên bài tập */}
         <div className="space-y-2">
           <Label htmlFor="exercise_name" className="text-base font-medium">
             {exerciseNameLabel}
@@ -320,6 +317,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
           />
         </div>
 
+        {/* Field: Nội dung bài học (Textarea với HoverCard tooltip) */}
         <div className="space-y-2">
           <Label htmlFor="lesson_name" className="text-base font-medium flex items-center gap-2">
             {lessonNameLabel}
@@ -350,6 +348,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
           />
         </div>
 
+        {/* Section: Chọn loại câu hỏi (Grid với Checkbox và Quantity controls) */}
         <div className="space-y-4">
           <Label className="text-base font-medium flex items-center gap-2">
             {questionTypeLabel}
@@ -452,6 +451,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
           </div>
         </div>
 
+        {/* Grid: Tổng câu hỏi (disabled, auto) và Độ khó (select) */}
         <div className="grid md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <Label className="text-base font-medium">{totalQuestionsLabel}</Label>
@@ -462,9 +462,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                 disabled
                 className="h-11 bg-muted/30 cursor-not-allowed font-semibold text-lg"
               />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground bg-background px-2 rounded">
-                {isEnglish ? "auto" : "tự động"}
-              </div>
+              
             </div>
             <p className="text-xs text-muted-foreground">
               {isEnglish ? "Total questions = sum of selected types" : "Tổng số câu = tổng các loại đã chọn"}
@@ -504,47 +502,15 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
           </div>
         </div>
 
-        {hasMultipleChoice && (
-          <div className="space-y-2">
-            <Label htmlFor="num_answers" className="text-base font-medium flex items-center gap-2">
-              {numAnswersLabel}
-              <HoverCard>
-                <HoverCardTrigger asChild>
-                  <Info className="w-4 h-4 text-muted-foreground cursor-help" />
-                </HoverCardTrigger>
-                <HoverCardContent className="w-80">
-                  <p className="text-sm">
-                    {isEnglish 
-                      ? "Number of options for multiple-choice questions (2-5 options)"
-                      : "Số lượng đáp án cho câu hỏi trắc nghiệm nhiều lựa chọn (2-5 đáp án)"}
-                  </p>
-                </HoverCardContent>
-              </HoverCard>
-            </Label>
-            <Input
-              id="num_answers"
-              type="number"
-              name="num_answers"
-              min={2}
-              max={5}
-              step={1}
-              value={formData.num_answers || 4}
-              onChange={handleInputChange}
-              disabled={isLoading}
-              className="h-11"
-            />
-            <p className="text-xs text-muted-foreground">
-              {isEnglish ? "From 2 to 5 options" : "Từ 2 đến 5 đáp án"}
-            </p>
-          </div>
-        )}
-
+       
+        {/* Error display */}
         {error && (
           <div className="p-4 bg-destructive/10 border border-destructive/30 text-destructive rounded-lg text-sm font-medium">
             {error}
           </div>
         )}
 
+        {/* Buttons: Cancel và Submit */}
         <div className="flex gap-3 justify-end pt-4 border-t border-border">
           <Button
             type="button"
@@ -568,6 +534,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
         </div>
       </form>
 
+      {/* Dialog Preview: Hiển thị câu hỏi generated */}
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
@@ -580,6 +547,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                   <h4 className="font-bold">
                     {q.question_text} {q.emoji}
                   </h4>
+                  {/* Render answers: Kiểm tra format linh hoạt từ API */}
                   {Array.isArray(q.answers) && q.answers.length > 0 ? (
                     <ul className="list-disc ml-4 mt-2">
                       {q.answers.map((ans: PreviewAnswer, i: number) => {
@@ -617,6 +585,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
               <p>{noQuestionsText}</p>
             )}
           </div>
+          {/* Buttons trong Dialog: Cancel, PDF no answers, PDF with answers */}
           <div className="flex justify-end gap-3 mt-6 flex-wrap">
             <Button variant="outline" onClick={() => setShowPreview(false)}>
               {cancelText}
