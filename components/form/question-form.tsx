@@ -108,9 +108,6 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
 
   /**
    * Handler cho input change.
-   * Cách viết: Generic cho Input/Textarea/Select.
-   * Cách làm: Parse number cho num_questions/num_answers, string cho các field khác.
-   * Cách thực hiện: Cập nhật state formData immutable (spread prev).
    */
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -472,18 +469,6 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
           <div className="space-y-2">
             <Label htmlFor="difficulty" className="text-base font-medium flex items-center gap-2">
               {difficultyLabel}
-              <HoverCard>
-                <HoverCardTrigger asChild>
-                  <Info className="w-4 h-4 text-muted-foreground cursor-help" />
-                </HoverCardTrigger>
-                <HoverCardContent className="w-80">
-                  <p className="text-sm">
-                    {isEnglish 
-                      ? "<strong>Easy:</strong> Basic questions<br/><strong>Medium:</strong> Average questions<br/><strong>Hard:</strong> Advanced questions"
-                      : "<strong>Dễ:</strong> Câu hỏi cơ bản<br/><strong>Bình thường:</strong> Câu hỏi trung bình<br/><strong>Khó:</strong> Câu hỏi nâng cao"}
-                  </p>
-                </HoverCardContent>
-              </HoverCard>
             </Label>
             <select
               id="difficulty"
@@ -536,7 +521,7 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
 
       {/* Dialog Preview: Hiển thị câu hỏi generated */}
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{previewTitle}</DialogTitle>
           </DialogHeader>
@@ -551,7 +536,14 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                   {Array.isArray(q.answers) && q.answers.length > 0 ? (
                     <ul className="list-disc ml-4 mt-2">
                       {q.answers.map((ans: PreviewAnswer, i: number) => {
-                        const answerText = ans.answer_text || ans.text || (typeof ans === "string" ? ans : String(ans))
+                        let answerText =
+                          ans.answer_text ||
+                          ans.text ||
+                          (typeof ans === "string" ? ans : String(ans))
+
+                        // Loại bỏ "(correct)" nếu có
+                        answerText = answerText.replace(/\(correct\)/gi, "").trim()
+                        
                         const isCorrect =
                           ans.is_correct !== undefined
                             ? ans.is_correct
@@ -575,10 +567,10 @@ export default function QuestionForm({ onCancel, initialData }: QuestionFormProp
                       {sampleAnswerText} {q.model_answer}
                     </p>
                   )}
-                  <p className="mt-2 italic text-sm">{q.explanation}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  {/* <p className="mt-2 italic text-sm">{q.explanation}</p> */}
+                  {/* <p className="text-xs text-muted-foreground mt-1">
                     {typeText} {q.type_name || (isEnglish ? "Auto-generated" : "Tự động")}
-                  </p>
+                  </p> */}
                 </div>
               ))
             ) : (

@@ -77,3 +77,4 @@ export interface Book {
   name: string;
   class_id: number;
 }
+

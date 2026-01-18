@@ -152,11 +152,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: `Tổng số lượng từ type_quantities (${totalFromQuantities}) không khớp với num_questions (${num_questions})` }, { status: 400 });
       }
     } else {
-      typesToUse = selected_types || (exercise_type === 'multiple_choice' ? ['multiple_choice'] : 
-                                      exercise_type === 'open_ended' ? ['open_ended'] : 
-                                      exercise_type === 'true_false' ? ['true_false'] :
-                                      exercise_type === 'multiple_select' ? ['multiple_select'] :
-                                      ['multiple_choice']);
+      typesToUse = selected_types || ['multiple_choice'];  // Bỏ chain: Chỉ fallback default
+      if (typesToUse.length === 0) {
+        typesToUse = ['multiple_choice'];  // Extra safety: Tránh empty array
+      }
       const numPerType = Math.floor(num_questions / typesToUse.length);
       const remainder = num_questions % typesToUse.length;
       typeDistribution = typesToUse.map((type, index) => ({
@@ -249,7 +248,7 @@ export async function POST(request: NextRequest) {
       objectStr = '{ "question_text": "...", "emoji": "...", "model_answer": "...", "explanation": "...", "suggested_type": "open_ended" }';
     }
 
-    // Specific instructions
+    // Specific instructions 
     let specificReq = '';
     if (isMixed) {
       specificReq = `- Phân bổ ĐÚNG theo số lượng: ${distributionStr}.

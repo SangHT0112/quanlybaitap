@@ -14,8 +14,8 @@ export default function QuestionsPage() {
       <div className="max-w-4xl w-full text-center space-y-8">
         {/* Header */}
         <div className="space-y-4">
-          <h1 className="text-6xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Q-GEN AI: NGƯỜI BẠN ÔN TẬP SỐ CỦA HỌC SINH THPT
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Q-GEN AI: NGƯỜI BẠN ÔN TẬP SỐ <br></br>CỦA HỌC SINH THPT
           </h1>
           <div className="space-y-2 text-lg text-muted-foreground">
               <p>
